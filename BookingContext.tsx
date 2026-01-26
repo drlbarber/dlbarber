@@ -76,7 +76,10 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const storedBlocked = localStorage.getItem('daryl_blocked_slots');
         if (storedBlocked) {
           try {
-            setBlockedSlots(new Set(JSON.parse(storedBlocked)));
+            const parsed = JSON.parse(storedBlocked);
+            if (Array.isArray(parsed)) {
+                setBlockedSlots(new Set(parsed));
+            }
           } catch (e) { console.error("Corrupt blocked slots data"); }
         }
 
@@ -84,7 +87,10 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         const storedAffiliates = localStorage.getItem('daryl_affiliates');
         if (storedAffiliates) {
           try {
-            setAffiliateCodes(JSON.parse(storedAffiliates));
+            const parsed = JSON.parse(storedAffiliates);
+            if (parsed && typeof parsed === 'object') {
+                setAffiliateCodes(parsed);
+            }
           } catch (e) { console.error("Corrupt affiliate data"); }
         }
 
@@ -152,7 +158,10 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             // Fallback: Try to load bookings from local storage if DB fails
             const localBookings = localStorage.getItem('daryl_bookings');
             if (localBookings) {
-              try { setBookings(JSON.parse(localBookings)); } catch (e) {}
+              try { 
+                  const parsed = JSON.parse(localBookings);
+                  if (Array.isArray(parsed)) setBookings(parsed); 
+              } catch (e) {}
             }
           }
         } else {
@@ -160,7 +169,8 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           const localBookings = localStorage.getItem('daryl_bookings');
           if (localBookings) {
             try {
-              setBookings(JSON.parse(localBookings));
+              const parsed = JSON.parse(localBookings);
+              if (Array.isArray(parsed)) setBookings(parsed);
             } catch (e) { console.error("Corrupt booking data"); }
           }
         }
