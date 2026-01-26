@@ -71,86 +71,101 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // 1. Initialize Data & DB Structure
   useEffect(() => {
     const initData = async () => {
-      // Load Blocked Slots (Local Storage fallback for UI speed)
-      const storedBlocked = localStorage.getItem('daryl_blocked_slots');
-      if (storedBlocked) {
-        setBlockedSlots(new Set(JSON.parse(storedBlocked)));
-      }
-
-      // Load Affiliate Codes (Local Storage fallback)
-      const storedAffiliates = localStorage.getItem('daryl_affiliates');
-      if (storedAffiliates) {
-          setAffiliateCodes(JSON.parse(storedAffiliates));
-      }
-
-      // DB INITIALIZATION & LOADING
-      if (sql) {
-        try {
-          // A. Create Tables if they don't exist (Auto-Migration)
-          await sql`
-            CREATE TABLE IF NOT EXISTS bookings (
-              id TEXT PRIMARY KEY,
-              date TEXT NOT NULL,
-              slot_id TEXT NOT NULL,
-              time TEXT NOT NULL,
-              service TEXT NOT NULL,
-              client TEXT NOT NULL,
-              status TEXT NOT NULL,
-              used_referral_code TEXT,
-              referral_claimed BOOLEAN DEFAULT FALSE
-            )
-          `;
-          
-          await sql`
-            CREATE TABLE IF NOT EXISTS affiliates (
-              phone TEXT PRIMARY KEY,
-              code TEXT UNIQUE NOT NULL
-            )
-          `;
-
-          // B. Load Bookings
-          const result = await sql`SELECT * FROM bookings ORDER BY date ASC`;
-          if (result && result.length > 0) {
-            const loadedBookings = result.map((row: any) => {
-              // Parse JSON stored as TEXT
-              const clientObj = typeof row.client === 'string' ? JSON.parse(row.client) : row.client;
-              const serviceObj = typeof row.service === 'string' ? JSON.parse(row.service) : row.service;
-              
-              return {
-                id: row.id,
-                date: row.date,
-                slotId: row.slot_id,
-                time: row.time,
-                service: serviceObj,
-                client: clientObj,
-                status: row.status || 'pending',
-                usedReferralCode: row.used_referral_code || clientObj.usedReferralCode,
-                referralClaimed: row.referral_claimed || clientObj.referralClaimed
-              };
-            });
-            setBookings(loadedBookings);
-          }
-
-          // C. Load Affiliates
-          const affiliatesResult = await sql`SELECT phone, code FROM affiliates`;
-          if (affiliatesResult && affiliatesResult.length > 0) {
-             const dbAffiliates: Record<string, string> = {};
-             affiliatesResult.forEach((row: any) => {
-                 dbAffiliates[row.code] = row.phone;
-             });
-             // Merge with local just in case, but DB takes precedence
-             setAffiliateCodes(prev => ({ ...prev, ...dbAffiliates }));
-          }
-
-        } catch (error) {
-          console.warn("DB init failed, falling back to local storage. Check DB connection string.", error);
+      try {
+        // Load Blocked Slots (Local Storage fallback for UI speed)
+        const storedBlocked = localStorage.getItem('daryl_blocked_slots');
+        if (storedBlocked) {
+          try {
+            setBlockedSlots(new Set(JSON.parse(storedBlocked)));
+          } catch (e) { console.error("Corrupt blocked slots data"); }
         }
-      } else {
-         // Fallback Booking Load if no DB configured
-         const localBookings = localStorage.getItem('daryl_bookings');
-         if (localBookings) {
-           setBookings(JSON.parse(localBookings));
-         }
+
+        // Load Affiliate Codes (Local Storage fallback)
+        const storedAffiliates = localStorage.getItem('daryl_affiliates');
+        if (storedAffiliates) {
+          try {
+            setAffiliateCodes(JSON.parse(storedAffiliates));
+          } catch (e) { console.error("Corrupt affiliate data"); }
+        }
+
+        // DB INITIALIZATION & LOADING
+        if (sql) {
+          try {
+            // A. Create Tables if they don't exist (Auto-Migration)
+            await sql`
+              CREATE TABLE IF NOT EXISTS bookings (
+                id TEXT PRIMARY KEY,
+                date TEXT NOT NULL,
+                slot_id TEXT NOT NULL,
+                time TEXT NOT NULL,
+                service TEXT NOT NULL,
+                client TEXT NOT NULL,
+                status TEXT NOT NULL,
+                used_referral_code TEXT,
+                referral_claimed BOOLEAN DEFAULT FALSE
+              )
+            `;
+            
+            await sql`
+              CREATE TABLE IF NOT EXISTS affiliates (
+                phone TEXT PRIMARY KEY,
+                code TEXT UNIQUE NOT NULL
+              )
+            `;
+
+            // B. Load Bookings
+            const result = await sql`SELECT * FROM bookings ORDER BY date ASC`;
+            if (result && result.length > 0) {
+              const loadedBookings = result.map((row: any) => {
+                // Parse JSON stored as TEXT
+                const clientObj = typeof row.client === 'string' ? JSON.parse(row.client) : row.client;
+                const serviceObj = typeof row.service === 'string' ? JSON.parse(row.service) : row.service;
+                
+                return {
+                  id: row.id,
+                  date: row.date,
+                  slotId: row.slot_id,
+                  time: row.time,
+                  service: serviceObj,
+                  client: clientObj,
+                  status: row.status || 'pending',
+                  usedReferralCode: row.used_referral_code || clientObj.usedReferralCode,
+                  referralClaimed: row.referral_claimed || clientObj.referralClaimed
+                };
+              });
+              setBookings(loadedBookings);
+            }
+
+            // C. Load Affiliates
+            const affiliatesResult = await sql`SELECT phone, code FROM affiliates`;
+            if (affiliatesResult && affiliatesResult.length > 0) {
+              const dbAffiliates: Record<string, string> = {};
+              affiliatesResult.forEach((row: any) => {
+                  dbAffiliates[row.code] = row.phone;
+              });
+              // Merge with local just in case, but DB takes precedence
+              setAffiliateCodes(prev => ({ ...prev, ...dbAffiliates }));
+            }
+
+          } catch (error) {
+            console.warn("DB init failed, falling back to local storage.", error);
+            // Fallback: Try to load bookings from local storage if DB fails
+            const localBookings = localStorage.getItem('daryl_bookings');
+            if (localBookings) {
+              try { setBookings(JSON.parse(localBookings)); } catch (e) {}
+            }
+          }
+        } else {
+          // Fallback Booking Load if no DB configured
+          const localBookings = localStorage.getItem('daryl_bookings');
+          if (localBookings) {
+            try {
+              setBookings(JSON.parse(localBookings));
+            } catch (e) { console.error("Corrupt booking data"); }
+          }
+        }
+      } catch (err) {
+        console.error("Critical Init Error:", err);
       }
 
       setIsInitialized(true);
