@@ -97,6 +97,14 @@ export const Booking = () => {
       usedReferralCode: referralCode.length === 4 ? referralCode.toUpperCase() : undefined
     });
 
+    // --- TRIGGER SMS TO DARYL ---
+    const d = getFormattedDate(currentSchedule.date);
+    const smsBody = `Nouvelle réservation :\n${guestForm.firstName} ${guestForm.lastName}\n${d.weekday} ${d.day} ${d.month} à ${slot.time}\nService: ${selectedService.name}\nTél: ${guestForm.phone}`;
+    
+    // Open SMS app with Daryl's number
+    window.open(`sms:0766167634?&body=${encodeURIComponent(smsBody)}`, '_self');
+    // ----------------------------
+
     setTimeout(() => {
         const count = getClientVisitCount(guestForm.phone);
         setVisitCount(count);

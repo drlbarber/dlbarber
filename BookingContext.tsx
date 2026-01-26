@@ -64,8 +64,22 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // Mapping: Code (key) -> Phone (value)
   const [affiliateCodes, setAffiliateCodes] = useState<Record<string, string>>({}); 
 
-  const [isAdminMode, setAdminMode] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // PERSISTENCE ADMIN : Check localStorage on init
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    if (typeof window !== 'undefined') {
+        return localStorage.getItem('daryl_admin_session') === 'true';
+    }
+    return false;
+  });
+
+  // If authenticated on load, default to Admin Mode true so he sees calendar immediately
+  const [isAdminMode, setAdminMode] = useState(() => {
+      if (typeof window !== 'undefined') {
+          return localStorage.getItem('daryl_admin_session') === 'true';
+      }
+      return false;
+  });
+
   const [isInitialized, setIsInitialized] = useState(false);
 
   // 1. Initialize Data & DB Structure
@@ -466,6 +480,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const authenticate = (pin: string) => {
     if (pin === '1397') {
         setIsAuthenticated(true);
+        localStorage.setItem('daryl_admin_session', 'true');
         return true;
     }
     return false;
@@ -474,6 +489,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const logout = () => {
     setIsAuthenticated(false);
     setAdminMode(false);
+    localStorage.removeItem('daryl_admin_session');
   }
 
   const getFormattedDate = (dateStr: string) => {
