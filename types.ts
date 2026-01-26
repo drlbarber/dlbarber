@@ -48,6 +48,7 @@ export interface ClientBooking {
   service: ServiceItem;
   client: BookingForm;
   status: BookingStatus;
-  referrerPhone?: string; // The phone number of the person who referred this booking
-  referralClaimed?: boolean; // True if the referrer has used the 10% discount from this booking
+  referrerPhone?: string; // Legacy: kept for compatibility
+  usedReferralCode?: string; // The 4-digit code used by this client
+  referralClaimed?: boolean; // True if the referrer has used the reward
 }

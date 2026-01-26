@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useBooking } from '../BookingContext';
 import { ServiceItem, BookingForm } from '../types';
-import { Star, ChevronLeft } from 'lucide-react';
+import { Star, ChevronLeft, Tag, Clock, MessageSquare } from 'lucide-react';
 
 const SERVICES_DATA: ServiceItem[] = [
   { id: 'cut', name: 'Coupe', duration: '', price: '15 €', note: 'FORME + CONTOURS' },
@@ -27,16 +27,15 @@ export const Booking = () => {
     phone: ''
   });
   
-  const [referrer, setReferrer] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState('');
   const [visitCount, setVisitCount] = useState(0);
 
   // Capture Referral Link on Mount
   useEffect(() => {
       const params = new URLSearchParams(window.location.search);
-      const refPhone = params.get('ref');
-      if (refPhone) {
-          setReferrer(refPhone);
-          // Optional: You could show a toast here "Parrainage activé !"
+      const refCode = params.get('ref');
+      if (refCode) {
+          setReferralCode(refCode.toUpperCase());
       }
   }, []);
 
@@ -87,7 +86,7 @@ export const Booking = () => {
       service: selectedService,
       client: guestForm,
       status: 'pending',
-      referrerPhone: referrer || undefined
+      usedReferralCode: referralCode.length === 4 ? referralCode.toUpperCase() : undefined
     });
 
     setTimeout(() => {
@@ -433,11 +432,6 @@ export const Booking = () => {
                 style={{ width: `${(currentStep / 3) * 100}%` }}
               ></div>
             </div>
-            {referrer && (
-                <div className="mt-4 bg-apple-blue/10 border border-apple-blue/30 rounded p-2 text-center animate-fade-in">
-                    <p className="text-[10px] text-apple-blue font-mono uppercase tracking-widest">Parrainage Appliqué</p>
-                </div>
-            )}
           </div>
 
           {/* STEP 1: STYLE */}
@@ -587,21 +581,84 @@ export const Booking = () => {
                 />
                 <label>Téléphone</label>
               </div>
+
+              {/* REFERRAL CODE INPUT */}
+              <div className="input-group">
+                  <input 
+                    type="text" 
+                    placeholder=" "
+                    maxLength={4}
+                    value={referralCode}
+                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                    className="tracking-widest"
+                />
+                <label className="flex items-center gap-2">
+                    <Tag className="w-3 h-3" /> Code Parrain (Optionnel)
+                </label>
+                {referralCode.length > 0 && referralCode.length < 4 && (
+                    <span className="absolute right-0 top-4 text-[10px] text-red-500 font-mono">4 caractères requis</span>
+                )}
+                {referralCode.length === 4 && (
+                    <span className="absolute right-0 top-4 text-[10px] text-green-500 font-mono">Code valide</span>
+                )}
+              </div>
+
             </div>
           )}
 
           {/* STEP 4: SUCCESS */}
           {currentStep === 4 && (
             <div className="animate-step text-center py-6">
-              <h2 className="text-[2.5rem] font-bold text-white mb-2 tracking-tighter uppercase italic">
-                {isFreeCut ? 'GRATUIT !' : 'Confirmé'}
-              </h2>
               
-              <div className="font-mono text-sm text-[#444] space-y-2 leading-relaxed mb-8">
-                <p className="text-white">{selectedService?.name}</p>
-                <p className="text-white">{getFormattedDate(currentSchedule.date).day} {getFormattedDate(currentSchedule.date).month} @ {allSlots.find(s => s.id === selectedSlotId)?.time}</p>
-                <p className="text-white uppercase">{guestForm.firstName} {guestForm.lastName}</p>
-                {isFreeCut && <p className="text-apple-blue font-bold mt-2 animate-pulse">8ème COUPE OFFERTE</p>}
+               {/* Pending Status Visual */}
+               <div className="w-16 h-16 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-orange-500/20 shadow-[0_0_20px_rgba(249,115,22,0.1)]">
+                   <Clock className="w-8 h-8 text-orange-500" />
+               </div>
+
+              <h2 className="text-[2rem] font-bold text-white mb-2 tracking-tighter uppercase italic leading-none">
+                {isFreeCut ? 'GRATUIT !' : 'DEMANDE ENVOYÉE'}
+              </h2>
+
+              {/* Explicit Confirmation Message */}
+              <div className="max-w-[90%] mx-auto mb-8 bg-[#111] border border-white/5 rounded-2xl p-4">
+                  <p className="text-white/80 text-sm leading-relaxed">
+                      Votre rendez-vous n'est <strong className="text-white">pas encore confirmé</strong>.
+                  </p>
+                  <div className="mt-3 flex items-start gap-3 text-left bg-black/50 p-3 rounded-lg border border-white/5">
+                      <MessageSquare className="w-5 h-5 text-apple-blue shrink-0 mt-0.5" />
+                      <p className="text-xs text-white/60">
+                          Vous recevrez un <span className="text-apple-blue font-bold">SMS de validation</span> de Daryl une fois le créneau accepté.
+                      </p>
+                  </div>
+              </div>
+              
+              <div className="bg-[#111] p-6 rounded-2xl border border-white/10 mb-8 mx-2 text-left">
+                  <div className="grid grid-cols-1 gap-2 font-mono text-sm">
+                      <div className="flex justify-between">
+                          <span className="text-white/40">Service</span>
+                          <span className="text-white font-bold">{selectedService?.name}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-white/40">Date</span>
+                          <span className="text-white">{getFormattedDate(currentSchedule.date).day} {getFormattedDate(currentSchedule.date).month} @ {allSlots.find(s => s.id === selectedSlotId)?.time}</span>
+                      </div>
+                      <div className="flex justify-between">
+                          <span className="text-white/40">Client</span>
+                          <span className="text-white uppercase">{guestForm.firstName} {guestForm.lastName}</span>
+                      </div>
+                      {referralCode && (
+                          <div className="flex justify-between">
+                             <span className="text-white/40">Code Parrain</span>
+                             <span className="text-apple-blue">{referralCode}</span>
+                          </div>
+                      )}
+                      {isFreeCut && (
+                           <div className="flex justify-between mt-2 pt-2 border-t border-white/10">
+                             <span className="text-apple-blue font-bold">TOTAL</span>
+                             <span className="text-apple-blue font-bold">0 € (OFFERT)</span>
+                           </div>
+                      )}
+                  </div>
               </div>
 
               {/* Loyalty Card */}
@@ -634,6 +691,7 @@ export const Booking = () => {
                     setSelectedService(null);
                     setSelectedSlotId(null);
                     setSelectedHour(null);
+                    setReferralCode('');
                     setGuestForm({ firstName: '', lastName: '', phone: '' });
                 }}
                 className="btn btn-secondary mt-8"

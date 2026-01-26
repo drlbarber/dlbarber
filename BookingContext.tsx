@@ -46,8 +46,12 @@ interface BookingContextType {
   authenticate: (pin: string) => boolean;
   logout: () => void;
   getFormattedDate: (dateStr: string) => { day: string; month: string; weekday: string };
-  getReferralBalance: (phone: string) => { count: number; percentage: number };
-  redeemReferralRewards: (phone: string) => Promise<void>;
+  // Referral System Updates
+  getReferralBalance: (phone: string) => { count: number; percentage: number; code: string | null };
+  redeemReferralRewards: (phone: string, targetBookingId: string) => Promise<void>;
+  applyLoyaltyFreeCut: (bookingId: string) => Promise<void>;
+  registerAffiliateCode: (phone: string, code: string) => Promise<boolean>;
+  getAffiliateCode: (phone: string) => string | null;
 }
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
@@ -57,50 +61,98 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<Set<string>>(new Set());
   
+  // Mapping: Code (key) -> Phone (value)
+  const [affiliateCodes, setAffiliateCodes] = useState<Record<string, string>>({}); 
+
   const [isAdminMode, setAdminMode] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // 1. Initialize Data
+  // 1. Initialize Data & DB Structure
   useEffect(() => {
     const initData = async () => {
+      // Load Blocked Slots (Local Storage fallback for UI speed)
       const storedBlocked = localStorage.getItem('daryl_blocked_slots');
       if (storedBlocked) {
         setBlockedSlots(new Set(JSON.parse(storedBlocked)));
       }
 
-      let loadedBookings: ClientBooking[] = [];
-      
+      // Load Affiliate Codes (Local Storage fallback)
+      const storedAffiliates = localStorage.getItem('daryl_affiliates');
+      if (storedAffiliates) {
+          setAffiliateCodes(JSON.parse(storedAffiliates));
+      }
+
+      // DB INITIALIZATION & LOADING
       if (sql) {
         try {
+          // A. Create Tables if they don't exist (Auto-Migration)
+          await sql`
+            CREATE TABLE IF NOT EXISTS bookings (
+              id TEXT PRIMARY KEY,
+              date TEXT NOT NULL,
+              slot_id TEXT NOT NULL,
+              time TEXT NOT NULL,
+              service TEXT NOT NULL,
+              client TEXT NOT NULL,
+              status TEXT NOT NULL,
+              used_referral_code TEXT,
+              referral_claimed BOOLEAN DEFAULT FALSE
+            )
+          `;
+          
+          await sql`
+            CREATE TABLE IF NOT EXISTS affiliates (
+              phone TEXT PRIMARY KEY,
+              code TEXT UNIQUE NOT NULL
+            )
+          `;
+
+          // B. Load Bookings
           const result = await sql`SELECT * FROM bookings ORDER BY date ASC`;
           if (result && result.length > 0) {
-            loadedBookings = result.map((row: any) => ({
-              id: row.id,
-              date: row.date,
-              slotId: row.slot_id,
-              time: row.time,
-              service: typeof row.service === 'string' ? JSON.parse(row.service) : row.service,
-              client: typeof row.client === 'string' ? JSON.parse(row.client) : row.client,
-              status: row.status || 'pending',
-              // Restore referral fields usually stored in client JSON or implicitly
-              referrerPhone: row.referrer_phone || (typeof row.client === 'string' ? JSON.parse(row.client).referrerPhone : row.client.referrerPhone),
-              referralClaimed: row.referral_claimed || (typeof row.client === 'string' ? JSON.parse(row.client).referralClaimed : row.client.referralClaimed)
-            }));
+            const loadedBookings = result.map((row: any) => {
+              // Parse JSON stored as TEXT
+              const clientObj = typeof row.client === 'string' ? JSON.parse(row.client) : row.client;
+              const serviceObj = typeof row.service === 'string' ? JSON.parse(row.service) : row.service;
+              
+              return {
+                id: row.id,
+                date: row.date,
+                slotId: row.slot_id,
+                time: row.time,
+                service: serviceObj,
+                client: clientObj,
+                status: row.status || 'pending',
+                usedReferralCode: row.used_referral_code || clientObj.usedReferralCode,
+                referralClaimed: row.referral_claimed || clientObj.referralClaimed
+              };
+            });
+            setBookings(loadedBookings);
           }
+
+          // C. Load Affiliates
+          const affiliatesResult = await sql`SELECT phone, code FROM affiliates`;
+          if (affiliatesResult && affiliatesResult.length > 0) {
+             const dbAffiliates: Record<string, string> = {};
+             affiliatesResult.forEach((row: any) => {
+                 dbAffiliates[row.code] = row.phone;
+             });
+             // Merge with local just in case, but DB takes precedence
+             setAffiliateCodes(prev => ({ ...prev, ...dbAffiliates }));
+          }
+
         } catch (error) {
-          console.warn("DB connection failed, falling back to local storage");
+          console.warn("DB init failed, falling back to local storage. Check DB connection string.", error);
         }
+      } else {
+         // Fallback Booking Load if no DB configured
+         const localBookings = localStorage.getItem('daryl_bookings');
+         if (localBookings) {
+           setBookings(JSON.parse(localBookings));
+         }
       }
 
-      if (loadedBookings.length === 0) {
-        const localBookings = localStorage.getItem('daryl_bookings');
-        if (localBookings) {
-          loadedBookings = JSON.parse(localBookings);
-        }
-      }
-
-      setBookings(loadedBookings);
       setIsInitialized(true);
     };
 
@@ -133,23 +185,24 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setSchedules(nextDays);
   }, [blockedSlots, isInitialized]);
 
-  // 3. Persist Data
+  // 3. Persist Data (Local Backup)
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('daryl_bookings', JSON.stringify(bookings));
     localStorage.setItem('daryl_blocked_slots', JSON.stringify(Array.from(blockedSlots)));
-  }, [bookings, blockedSlots, isInitialized]);
+    localStorage.setItem('daryl_affiliates', JSON.stringify(affiliateCodes));
+  }, [bookings, blockedSlots, affiliateCodes, isInitialized]);
 
 
   // --- Actions ---
 
   const addBooking = async (booking: ClientBooking) => {
-    // Ensure referrer data is stored in the client object for JSON fallback
+    // Save usedReferralCode in the client blob for backup
     const bookingToSave = {
         ...booking,
         client: {
             ...booking.client,
-            referrerPhone: booking.referrerPhone,
+            usedReferralCode: booking.usedReferralCode,
             referralClaimed: false
         }
     };
@@ -159,7 +212,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (sql) {
       try {
         await sql`
-          INSERT INTO bookings (id, date, slot_id, time, service, client, status)
+          INSERT INTO bookings (id, date, slot_id, time, service, client, status, used_referral_code, referral_claimed)
           VALUES (
             ${bookingToSave.id}, 
             ${bookingToSave.date}, 
@@ -167,10 +220,12 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ${bookingToSave.time}, 
             ${JSON.stringify(bookingToSave.service)}, 
             ${JSON.stringify(bookingToSave.client)},
-            ${bookingToSave.status}
+            ${bookingToSave.status},
+            ${bookingToSave.usedReferralCode || null},
+            ${false}
           )
         `;
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("SQL Error AddBooking:", e); }
     }
   };
 
@@ -215,75 +270,169 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     ).length;
   };
 
-  // --- REFERRAL SYSTEM ---
+  // --- REFERRAL SYSTEM V2 (Codes) ---
   
+  const registerAffiliateCode = async (phone: string, code: string): Promise<boolean> => {
+      const cleanPhone = phone.replace(/\D/g, '');
+      const cleanCode = code.toUpperCase().trim();
+
+      // Check if code exists locally first
+      if (affiliateCodes[cleanCode] && affiliateCodes[cleanCode] !== cleanPhone) {
+          return false; // Code taken
+      }
+
+      // Optimistic Update
+      setAffiliateCodes(prev => ({
+          ...prev,
+          [cleanCode]: cleanPhone
+      }));
+
+      // DB Insert
+      if (sql) {
+          try {
+              await sql`INSERT INTO affiliates (phone, code) VALUES (${cleanPhone}, ${cleanCode})`;
+          } catch (e) {
+              console.error("SQL Error RegisterAffiliate:", e);
+              return false;
+          }
+      }
+      
+      return true;
+  };
+
+  const getAffiliateCode = (phone: string) => {
+      const cleanPhone = phone.replace(/\D/g, '');
+      return Object.keys(affiliateCodes).find(key => affiliateCodes[key] === cleanPhone) || null;
+  };
+
   const getReferralBalance = (phone: string) => {
       const cleanPhone = (p: string) => p.replace(/\D/g, '');
-      const target = cleanPhone(phone);
+      const targetPhone = cleanPhone(phone);
       
-      if (!target) return { count: 0, percentage: 0 };
+      // 1. Find the code owned by this user
+      const myCode = getAffiliateCode(targetPhone);
 
-      // Find bookings where referrerPhone matches target, status is confirmed, and claimed is false
-      // Note: We check b.client.referrerPhone or b.referrerPhone depending on how it was saved
+      if (!myCode) return { count: 0, percentage: 0, code: null };
+
+      // 2. Find bookings that USED this code
       const eligibleReferrals = bookings.filter(b => {
-          const bookingReferrer = b.referrerPhone || (b.client as any).referrerPhone;
+          const usedCode = b.usedReferralCode || (b.client as any).usedReferralCode;
           const isClaimed = b.referralClaimed || (b.client as any).referralClaimed;
           
-          if (!bookingReferrer) return false;
+          if (!usedCode) return false;
           
           return (
-              cleanPhone(bookingReferrer) === target && // Referred by this user
-              b.status === 'confirmed' && // Booking was completed
-              !isClaimed // Reward not yet used
+              usedCode === myCode && // Used MY code
+              b.status === 'confirmed' && // Booking completed
+              !isClaimed // Not yet redeemed
           );
       });
 
       const count = eligibleReferrals.length;
       return {
           count,
-          percentage: Math.min(count * 10, 100)
+          percentage: Math.min(count * 10, 100), // Cap visual percentage at 100%
+          code: myCode
       };
   };
 
-  const redeemReferralRewards = async (phone: string) => {
+  const applyLoyaltyFreeCut = async (bookingId: string) => {
+      const targetBooking = bookings.find(b => b.id === bookingId);
+      if (!targetBooking) return;
+
+      const updatedService = { 
+          ...targetBooking.service, 
+          name: `${targetBooking.service.name} (FIDÉLITÉ 8e)`,
+          price: '0 €'
+      };
+
+      setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, service: updatedService } : b));
+
+      if (sql) {
+          try {
+             // Update JSON stored as text
+             await sql`UPDATE bookings SET service = ${JSON.stringify(updatedService)} WHERE id = ${bookingId}`;
+          } catch(e) { console.error("SQL Error ApplyLoyalty:", e); }
+      }
+  };
+
+  const redeemReferralRewards = async (phone: string, targetBookingId: string) => {
       const cleanPhone = (p: string) => p.replace(/\D/g, '');
-      const target = cleanPhone(phone);
+      const targetPhone = cleanPhone(phone);
       
-      // Identify IDs to update
-      const bookingsToUpdate = bookings.filter(b => {
-          const bookingReferrer = b.referrerPhone || (b.client as any).referrerPhone;
+      // 1. Identify current booking to update (The one getting the discount)
+      const targetBooking = bookings.find(b => b.id === targetBookingId);
+      if (!targetBooking) return;
+
+      const myCode = getAffiliateCode(targetPhone);
+      if (!myCode) return;
+
+      // 2. Identify Referral IDs to burn (The sources of the discount)
+      const availableReferrals = bookings.filter(b => {
+          const usedCode = b.usedReferralCode || (b.client as any).usedReferralCode;
           const isClaimed = b.referralClaimed || (b.client as any).referralClaimed;
-          
           return (
-              bookingReferrer && 
-              cleanPhone(bookingReferrer) === target && 
+              usedCode === myCode &&
               b.status === 'confirmed' && 
               !isClaimed
           );
       });
 
-      if (bookingsToUpdate.length === 0) return;
+      if (availableReferrals.length === 0) return;
 
-      // Update State
+      // Burn max 10 referrals (100%) or less if fewer available
+      const referralsToBurn = availableReferrals.slice(0, 10);
+      const discountPercentage = referralsToBurn.length * 10;
+      
+      // Calculate new price
+      const currentPrice = parseInt(targetBooking.service.price.replace(/[^0-9]/g, '')) || 0;
+      const newPriceValue = Math.max(0, currentPrice * (1 - discountPercentage / 100));
+      const newPriceString = discountPercentage >= 100 ? '0 €' : `${newPriceValue.toFixed(0)} €`;
+      const suffix = discountPercentage >= 100 ? '(OFFERT PARRAIN)' : `(-${discountPercentage}%)`;
+
+      // 3. Update State
       setBookings(prev => prev.map(b => {
-          if (bookingsToUpdate.find(upd => upd.id === b.id)) {
+          // If this is one of the referral sources, mark as claimed
+          if (referralsToBurn.find(upd => upd.id === b.id)) {
               return { 
                   ...b, 
                   referralClaimed: true,
                   client: { ...b.client, referralClaimed: true } as any
               };
           }
+          // If this is the booking receiving the discount, update service price
+          if (b.id === targetBookingId) {
+             return {
+                 ...b,
+                 service: {
+                     ...b.service,
+                     name: `${b.service.name} ${suffix}`,
+                     price: newPriceString
+                 }
+             }
+          }
           return b;
       }));
 
-      // Update DB (Approximation for demo: Updating the client JSON blob)
+      // 4. Update DB
       if (sql) {
-          for (const b of bookingsToUpdate) {
+          // Burn points
+          for (const b of referralsToBurn) {
                const updatedClient = { ...b.client, referralClaimed: true };
                try {
-                   await sql`UPDATE bookings SET client = ${JSON.stringify(updatedClient)} WHERE id = ${b.id}`;
-               } catch(e) { console.error(e); }
+                   // Update both column and JSON for safety
+                   await sql`UPDATE bookings SET referral_claimed = TRUE, client = ${JSON.stringify(updatedClient)} WHERE id = ${b.id}`;
+               } catch(e) { console.error("SQL Error BurnReferral:", e); }
           }
+          // Apply discount to target booking
+          const updatedService = { 
+              ...targetBooking.service, 
+              name: `${targetBooking.service.name} ${suffix}`,
+              price: newPriceString
+          };
+          try {
+             await sql`UPDATE bookings SET service = ${JSON.stringify(updatedService)} WHERE id = ${targetBookingId}`;
+          } catch(e) { console.error("SQL Error ApplyDiscount:", e); }
       }
   };
 
@@ -322,13 +471,16 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       getClientVisitCount,
       toggleSlotAvailability, 
       isAdminMode, 
-      setAdminMode,
+      setAdminMode, 
       isAuthenticated,
       authenticate,
       logout,
       getFormattedDate,
       getReferralBalance,
-      redeemReferralRewards
+      redeemReferralRewards,
+      applyLoyaltyFreeCut,
+      registerAffiliateCode,
+      getAffiliateCode
     }}>
       {children}
     </BookingContext.Provider>
