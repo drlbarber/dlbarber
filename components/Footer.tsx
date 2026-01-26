@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { useBooking } from '../BookingContext';
 import { Lock } from 'lucide-react';
@@ -6,9 +7,9 @@ export const Footer = () => {
   const { setAdminMode, isAdminMode } = useBooking();
 
   return (
-    <footer className="bg-black text-[10px] text-gray-600 py-8 px-6 flex flex-col items-center border-t border-gray-900">
+    <footer className="bg-[#050505] text-[10px] text-gray-600 py-8 px-6 flex flex-col items-center border-t border-white/5">
       <p className="mb-2">© 2024 Daryl Barber Studio.</p>
-      <p className="mb-6">Designed for mobile.</p>
+      <p className="mb-6">Conçu pour mobile.</p>
       
       <button 
         onClick={() => setAdminMode(!isAdminMode)}

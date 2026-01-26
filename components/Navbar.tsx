@@ -1,8 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
-import { Scissors } from 'lucide-react';
+import { Scissors, Gift } from 'lucide-react';
+import { AffiliateModal } from './AffiliateModal';
 
 export const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isAffiliateOpen, setIsAffiliateOpen] = useState(false);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -22,33 +25,49 @@ export const Navbar = () => {
   };
 
   return (
-    <nav 
-      className={`fixed top-0 w-full z-50 transition-all duration-500 ${
-        isScrolled 
-          ? 'glass-nav py-3 border-b border-white/10' 
-          : 'bg-transparent py-6 mix-blend-difference'
-      }`}
-    >
-      <div className="px-6 flex items-center justify-between">
-        {/* Minimal Logo */}
-        <div className="flex items-center gap-2">
-          <Scissors className="w-4 h-4 text-white opacity-90" />
-          <span className="text-sm font-semibold tracking-wide text-white opacity-90">DARYL</span>
-        </div>
-
-        {/* Minimal Action */}
-        <a 
-          href="#booking"
-          onClick={scrollToBooking}
-          className={`text-xs font-medium px-4 py-2 rounded-full transition-all duration-300 cursor-pointer ${
-             isScrolled 
-                ? 'bg-white text-black' 
-                : 'border border-white text-white'
-          }`}
+    <>
+        <nav 
+        className={`fixed top-0 w-full z-50 transition-all duration-500 ${
+            isScrolled 
+            ? 'glass-nav py-3 border-b border-white/10' 
+            : 'bg-transparent py-6 mix-blend-difference'
+        }`}
         >
-          Réserver
-        </a>
-      </div>
-    </nav>
+        <div className="px-6 flex items-center justify-between">
+            {/* Minimal Logo */}
+            <div className="flex items-center gap-2">
+            <Scissors className="w-4 h-4 text-white opacity-90" />
+            <span className="text-sm font-semibold tracking-wide text-white opacity-90">DARYL</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+                {/* Affiliate Button */}
+                <button
+                    onClick={() => setIsAffiliateOpen(true)}
+                    className={`p-2 rounded-full transition-all duration-300 ${
+                         isScrolled ? 'text-black hover:bg-black/5' : 'text-white hover:bg-white/10'
+                    }`}
+                >
+                    <Gift className="w-5 h-5" />
+                </button>
+
+                {/* Minimal Action */}
+                <a 
+                href="#booking"
+                onClick={scrollToBooking}
+                className={`text-xs font-medium px-4 py-2 rounded-full transition-all duration-300 cursor-pointer ${
+                    isScrolled 
+                        ? 'bg-white text-black' 
+                        : 'border border-white text-white'
+                }`}
+                >
+                Réserver
+                </a>
+            </div>
+        </div>
+        </nav>
+        
+        <AffiliateModal isOpen={isAffiliateOpen} onClose={() => setIsAffiliateOpen(false)} />
+    </>
   );
 };

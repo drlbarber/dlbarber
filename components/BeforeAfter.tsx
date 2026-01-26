@@ -1,16 +1,17 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 const TRANSFORMATIONS = [
   {
     id: '045',
-    label: 'Natural Flow',
+    label: 'Naturel',
     before: 'https://i.postimg.cc/zf38xXzW/Capture-d-e-cran-2026-01-24-a-13-14-39.png',
     after: 'https://i.postimg.cc/XvX4s7jw/Capture-d-e-cran-2026-01-24-a-13-14-58.png'
   },
   {
     id: '044',
-    label: 'Texture Crop',
+    label: 'Texture',
     before: 'https://i.postimg.cc/jScS8Fzb/Capture-d-e-cran-2026-01-24-a-13-13-46.png',
     after: 'https://i.postimg.cc/Gpph6xjV/Capture-d-e-cran-2026-01-24-a-13-14-03.png'
   },
@@ -22,7 +23,7 @@ const TRANSFORMATIONS = [
   },
   {
     id: '043',
-    label: 'Fade Precision',
+    label: 'Précision',
     before: 'https://i.postimg.cc/jqDnDtP9/Capture-d-e-cran-2026-01-24-a-13-12-17.png',
     after: 'https://i.postimg.cc/fWVSVDm1/Capture-d-e-cran-2026-01-24-a-13-12-48.png'
   }
@@ -33,6 +34,11 @@ export const BeforeAfter = () => {
   const [position, setPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Gesture Intent Refs
+  const touchStartRef = useRef<{ x: number, y: number } | null>(null);
+  const isScrollingRef = useRef<boolean>(false);
+
   const activeClient = TRANSFORMATIONS[activeIndex];
 
   const handleMove = (clientX: number) => {
@@ -48,14 +54,47 @@ export const BeforeAfter = () => {
     if (isDragging) handleMove(e.clientX);
   };
 
-  const onTouchMove = (e: React.TouchEvent) => {
-    if (isDragging) handleMove(e.touches[0].clientX);
+  // Mouse Interaction
+  const handleMouseDown = () => setIsDragging(true);
+
+  // Touch Interactions
+  const onTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY
+    };
+    isScrollingRef.current = false;
   };
 
-  const handleInteractionStart = () => setIsDragging(true);
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || !touchStartRef.current) return;
+
+    // If we have determined the user is scrolling, stop updating the slider
+    if (isScrollingRef.current) return;
+
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+
+    const deltaX = Math.abs(currentX - touchStartRef.current.x);
+    const deltaY = Math.abs(currentY - touchStartRef.current.y);
+
+    // Intent Detection: 
+    // If vertical movement is significant and dominant, assume scroll intent.
+    if (deltaY > deltaX && deltaY > 10) {
+      isScrollingRef.current = true;
+      return;
+    }
+
+    // Otherwise, handle slider logic
+    handleMove(currentX);
+  };
   
   useEffect(() => {
-    const handleUp = () => setIsDragging(false);
+    const handleUp = () => {
+      setIsDragging(false);
+      isScrollingRef.current = false;
+    };
     window.addEventListener('mouseup', handleUp);
     window.addEventListener('touchend', handleUp);
     return () => {
@@ -75,7 +114,7 @@ export const BeforeAfter = () => {
   };
 
   return (
-    <section className="relative w-full bg-black h-full flex flex-col items-center justify-center overflow-hidden font-outfit rounded-t-[3rem] z-10">
+    <section className="relative w-full bg-[#080808] h-full flex flex-col items-center justify-center overflow-hidden rounded-t-[3rem] z-10 border-t border-white/5">
       <style>{`
         .latex-grain {
           position: absolute;
@@ -90,42 +129,40 @@ export const BeforeAfter = () => {
           content: '';
           position: absolute;
           height: 100%;
-          width: 60px;
-          background: radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, transparent 70%);
-          transform: translateX(-50%);
+          width: 1px;
+          background: rgba(255,255,255,0.3);
           left: 50%;
+          transform: translateX(-50%);
           pointer-events: none;
         }
 
         .handle-blob {
-          width: 4px;
-          height: 120px;
-          background: rgba(255,255,255,0.9);
-          border-radius: 100px;
-          box-shadow: 0 0 30px rgba(255,255,255,0.4), 0 0 10px rgba(255,255,255,0.8);
+          width: 40px;
+          height: 40px;
+          background: rgba(255,255,255,0.1);
+          backdrop-filter: blur(10px);
+          border: 1px solid rgba(255,255,255,0.3);
+          border-radius: 50%;
           position: relative;
-          transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          box-shadow: 0 0 20px rgba(0,0,0,0.5);
+          transition: transform 0.2s ease;
         }
 
         .handle-blob::after {
           content: '';
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          width: 40px;
-          height: 160px;
-          background: rgba(245, 235, 235, 0.15);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
-          border: 1px solid rgba(255,255,255,0.1);
-          mask-image: linear-gradient(transparent, black, transparent);
+          width: 4px;
+          height: 4px;
+          background: white;
+          border-radius: 50%;
         }
 
         .active-blob {
-          transform: scaleX(2) scaleY(0.95);
-          background: #ff0055;
+          transform: scale(1.2);
+          background: rgba(255,255,255,0.2);
+          border-color: white;
         }
       `}</style>
 
@@ -135,24 +172,24 @@ export const BeforeAfter = () => {
         {/* Header UI */}
         <header className="absolute top-12 left-6 right-6 z-50 flex justify-between items-start pointer-events-none">
           <div className="animate-fade-in" key={`header-${activeClient.id}`}>
-            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/50 block mb-2">
-              System.Reform // {activeClient.id}
+            <span className="font-mono text-[10px] uppercase tracking-[2px] text-white/50 block mb-2">
+              Système.Reforme // {activeClient.id}
             </span>
-            <h1 className="text-3xl font-black leading-[0.9] uppercase tracking-tighter text-white">
-              VISUAL<br/><span className="text-white/40">SHIFT</span>
+            <h1 className="text-2xl md:text-3xl font-space font-bold leading-[0.9] uppercase tracking-tight text-white">
+              MÉTA<br/><span className="text-white/40">MORPHOSE</span>
             </h1>
           </div>
           
           <div className="flex gap-2 pointer-events-auto mt-2">
             <button 
               onClick={prevClient}
-              className="w-10 h-10 flex items-center justify-center border border-white/10 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-white/10 transition-colors"
+              className="w-10 h-10 flex items-center justify-center border border-white/10 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-white hover:text-black transition-colors"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button 
               onClick={nextClient}
-              className="w-10 h-10 flex items-center justify-center border border-white/10 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-white/10 transition-colors"
+              className="w-10 h-10 flex items-center justify-center border border-white/10 bg-black/40 backdrop-blur-md rounded-full text-white hover:bg-white hover:text-black transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -163,19 +200,19 @@ export const BeforeAfter = () => {
         <div 
           id="stage"
           ref={containerRef}
-          className="relative flex-1 w-full cursor-ew-resize touch-none select-none"
-          onMouseDown={handleInteractionStart}
+          className="relative flex-1 w-full cursor-ew-resize touch-pan-y select-none"
+          onMouseDown={handleMouseDown}
           onMouseMove={onMouseMove}
-          onTouchStart={handleInteractionStart}
+          onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
         >
           {/* Side Labels */}
           <div className="absolute top-1/2 -translate-y-1/2 w-full px-5 flex justify-between pointer-events-none z-20 mix-blend-difference">
             <span className="font-mono text-[10px] tracking-[4px] opacity-60 text-white vertical-lr uppercase writing-vertical-lr rotate-180">
-              Raw_Input
+              Avant
             </span>
             <span className="font-mono text-[10px] tracking-[4px] opacity-60 text-white vertical-lr uppercase writing-vertical-lr rotate-180">
-              Final_Render
+              Après
             </span>
           </div>
 
@@ -200,11 +237,8 @@ export const BeforeAfter = () => {
 
           {/* Slider Handle */}
           <div 
-            className="absolute top-0 bottom-0 w-[2px] z-30 -translate-x-1/2 flex items-center justify-center latex-slider"
-            style={{ 
-              left: `${position}%`,
-              background: 'linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.6), transparent)'
-            }}
+            className="absolute top-0 bottom-0 w-[40px] z-30 -translate-x-1/2 flex items-center justify-center latex-slider"
+            style={{ left: `${position}%` }}
           >
             <div className={`handle-blob ${isDragging ? 'active-blob' : ''}`}></div>
           </div>
@@ -213,16 +247,16 @@ export const BeforeAfter = () => {
         {/* Footer UI */}
         <footer className="absolute bottom-32 left-6 right-6 z-50 flex justify-between items-end pointer-events-none">
           <div className="px-3 py-2 bg-black/40 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-2">
-            <div className="w-1.5 h-1.5 bg-[#ff0055] rounded-full animate-pulse"></div>
-            <span className="font-mono text-[10px] uppercase tracking-wider text-white">Interactive</span>
+            <div className="w-1.5 h-1.5 bg-apple-blue rounded-full animate-pulse"></div>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-white">Interactif</span>
           </div>
 
           <div className="text-right">
             <span className="font-mono text-[10px] uppercase tracking-widest text-white/50 block mb-1">
-              Morph %
+              Morph
             </span>
             <div className="font-mono text-sm font-medium text-white">
-              {position.toFixed(2)}%
+              {position.toFixed(0)}%
             </div>
           </div>
         </footer>

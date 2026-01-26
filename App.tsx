@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
@@ -74,7 +75,7 @@ function App() {
                 {/* Layer 2: Booking - Slides over Transformations */}
                 <div 
                     ref={bookingRef}
-                    className="relative z-20 bg-basalt-dark rounded-t-[3rem] shadow-[0_-50px_100px_rgba(0,0,0,0.8)] border-t border-white/10 min-h-screen"
+                    className="relative z-20 bg-[#050505] rounded-t-[3rem] shadow-[0_-50px_100px_rgba(0,0,0,0.8)] border-t border-white/10"
                 >
                     <Booking />
                     <Footer />

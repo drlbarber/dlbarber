@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Haircut } from '../types';
 
@@ -15,7 +16,7 @@ export const Gallery = () => {
         <h2 className="text-2xl font-bold text-white tracking-tight">
           Collections
         </h2>
-        <span className="text-xs text-gray-500">Swipe →</span>
+        <span className="text-xs text-gray-500">Glisser →</span>
       </div>
 
       {/* Horizontal Snap Scroll */}

@@ -1,3 +1,4 @@
+
 export interface Haircut {
   id: number;
   title: string;
@@ -9,10 +10,10 @@ export interface BookingForm {
   firstName: string;
   lastName: string;
   phone: string;
-  email: string;
 }
 
 export type SlotStatus = 'Prime' | 'Open' | 'Peak' | 'Booked';
+export type BookingStatus = 'pending' | 'confirmed' | 'rejected' | 'walk-in';
 
 export interface TimeSlot {
   id: string;
@@ -46,4 +47,7 @@ export interface ClientBooking {
   time: string;
   service: ServiceItem;
   client: BookingForm;
+  status: BookingStatus;
+  referrerPhone?: string; // The phone number of the person who referred this booking
+  referralClaimed?: boolean; // True if the referrer has used the 10% discount from this booking
 }

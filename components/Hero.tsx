@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 
 export const Hero = () => {
@@ -66,7 +67,7 @@ export const Hero = () => {
         }}
       >
         <h1 className="text-[18vw] font-black leading-[0.8] m-0 tracking-tighter">DARYL</h1>
-        <p className="text-[1rem] font-light mt-3 tracking-[8px] uppercase">The Grooming Lab</p>
+        <p className="text-[1rem] font-light mt-3 tracking-[8px] uppercase">L'Art du Grooming</p>
         
         <button 
           onClick={scrollToBooking}
@@ -81,7 +82,7 @@ export const Hero = () => {
         className="absolute bottom-8 left-1/2 -translate-x-1/2 mix-blend-difference text-white flex flex-col items-center gap-2"
         style={{ opacity: Math.max(0, 1 - scrollY / 200) }}
       >
-        <span className="text-[10px] uppercase tracking-widest">Scroll</span>
+        <span className="text-[10px] uppercase tracking-widest">Défiler</span>
         <div className="w-[1px] h-12 bg-gradient-to-b from-white to-transparent"></div>
       </div>
     </div>
