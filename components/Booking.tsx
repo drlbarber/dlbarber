@@ -10,7 +10,7 @@ const SERVICES_DATA: ServiceItem[] = [
 ];
 
 export const Booking = () => {
-  const { schedules, getFormattedDate, addBooking, getBookingsForDate, getClientVisitCount } = useBooking();
+  const { schedules, getFormattedDate, addBooking, getBookingsForDate, getClientVisitCount, getAffiliateCode } = useBooking();
   
   // -- State --
   const [currentStep, setCurrentStep] = useState(1);
@@ -49,11 +49,19 @@ export const Booking = () => {
   // Filter unique hours for the first view of Step 2
   const uniqueHours = Array.from(new Set(allSlots.map(s => s.time.split(':')[0])));
 
+  // -- Check for Self-Referral --
+  // We check if the user entered code matches the code associated with their own phone number
+  const myOwnCode = guestForm.phone.length > 9 ? getAffiliateCode(guestForm.phone) : null;
+  const isSelfReferral = myOwnCode && referralCode === myOwnCode;
+
+
   // -- Handlers --
   const handleNext = () => {
     if (currentStep < 3) {
       setCurrentStep(prev => prev + 1);
     } else if (currentStep === 3) {
+      // Extra validation for step 3
+      if (isSelfReferral) return;
       handleConfirmBooking();
     }
   };
@@ -100,7 +108,11 @@ export const Booking = () => {
   const isStepValid = () => {
     if (currentStep === 1) return !!selectedService;
     if (currentStep === 2) return !!selectedSlotId;
-    if (currentStep === 3) return guestForm.firstName.length > 1 && guestForm.lastName.length > 1 && guestForm.phone.length > 9;
+    if (currentStep === 3) {
+        const isFormFilled = guestForm.firstName.length > 1 && guestForm.lastName.length > 1 && guestForm.phone.length > 9;
+        const isCodeValid = referralCode.length === 0 || (referralCode.length === 4 && !isSelfReferral);
+        return isFormFilled && isCodeValid;
+    }
     return false;
   };
 
@@ -599,7 +611,9 @@ export const Booking = () => {
                     <span className="absolute right-0 top-4 text-[10px] text-red-500 font-mono">4 caractères requis</span>
                 )}
                 {referralCode.length === 4 && (
-                    <span className="absolute right-0 top-4 text-[10px] text-green-500 font-mono">Code valide</span>
+                    <span className={`absolute right-0 top-4 text-[10px] font-mono ${isSelfReferral ? 'text-red-500' : 'text-green-500'}`}>
+                        {isSelfReferral ? 'Code personnel invalide' : 'Code valide'}
+                    </span>
                 )}
               </div>
 

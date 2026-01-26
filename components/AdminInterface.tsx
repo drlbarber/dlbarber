@@ -41,7 +41,7 @@ export const AdminInterface = () => {
 
   // Loyalty Lookup State
   const [scanPhone, setScanPhone] = useState('');
-  const [scanReferral, setScanReferral] = useState<{count: number, percentage: number} | null>(null);
+  const [scanReferral, setScanReferral] = useState<{count: number, creditAmount: number} | null>(null);
   const [scanVisits, setScanVisits] = useState<number>(0);
   const [clientBookings, setClientBookings] = useState<ClientBooking[]>([]);
 
@@ -142,11 +142,9 @@ export const AdminInterface = () => {
 
   const handleRedeemReferral = async (bookingId: string) => {
       if (!scanReferral) return;
-      if (scanReferral.percentage === 0) return;
+      if (scanReferral.creditAmount === 0) return;
       
-      const confirmMsg = scanReferral.percentage >= 100 
-        ? "Appliquer une coupe GRATUITE grâce au parrainage ?" 
-        : `Appliquer -${scanReferral.percentage}% de réduction sur ce rendez-vous ?`;
+      const confirmMsg = `Utiliser le solde parrainage (${scanReferral.creditAmount} €) pour réduire le prix de cette coupe ?`;
 
       if (window.confirm(confirmMsg)) {
           await redeemReferralRewards(scanPhone, bookingId);
@@ -363,7 +361,7 @@ export const AdminInterface = () => {
                             <div>
                                 <p className="text-[10px] text-white/40 uppercase tracking-widest font-mono mb-1">Solde Parrainage</p>
                                 <div className="flex items-baseline gap-1">
-                                    <span className="text-3xl font-bold text-apple-blue font-space">{scanReferral.percentage}%</span>
+                                    <span className="text-3xl font-bold text-apple-blue font-space">{scanReferral.creditAmount} €</span>
                                     <span className="text-[10px] text-white/40 font-mono ml-2">DISPONIBLE</span>
                                 </div>
                             </div>
@@ -396,11 +394,11 @@ export const AdminInterface = () => {
                                                 {!isFree && (
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <button
-                                                            disabled={scanReferral.percentage === 0}
+                                                            disabled={scanReferral.creditAmount === 0}
                                                             onClick={() => handleRedeemReferral(booking.id)}
                                                             className="py-2 px-2 bg-apple-blue/10 hover:bg-apple-blue/20 text-apple-blue border border-apple-blue/30 rounded-lg text-[9px] font-bold uppercase disabled:opacity-30 disabled:cursor-not-allowed"
                                                         >
-                                                            Utiliser Parrainage {scanReferral.percentage > 0 ? `(-${scanReferral.percentage}%)` : ''}
+                                                            Utiliser Solde
                                                         </button>
                                                         <button
                                                             disabled={!(scanVisits > 0 && scanVisits % 8 === 0)}

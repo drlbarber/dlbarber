@@ -47,7 +47,7 @@ interface BookingContextType {
   logout: () => void;
   getFormattedDate: (dateStr: string) => { day: string; month: string; weekday: string };
   // Referral System Updates
-  getReferralBalance: (phone: string) => { count: number; percentage: number; code: string | null };
+  getReferralBalance: (phone: string) => { count: number; creditAmount: number; code: string | null };
   redeemReferralRewards: (phone: string, targetBookingId: string) => Promise<void>;
   applyLoyaltyFreeCut: (bookingId: string) => Promise<void>;
   registerAffiliateCode: (phone: string, code: string) => Promise<boolean>;
@@ -71,111 +71,99 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // 1. Initialize Data & DB Structure
   useEffect(() => {
     const initData = async () => {
+      let dbLoaded = false;
+      
+      // Load Local Data first (Fast render)
       try {
-        // Load Blocked Slots (Local Storage fallback for UI speed)
         const storedBlocked = localStorage.getItem('daryl_blocked_slots');
         if (storedBlocked) {
-          try {
             const parsed = JSON.parse(storedBlocked);
-            if (Array.isArray(parsed)) {
-                setBlockedSlots(new Set(parsed));
-            }
-          } catch (e) { console.error("Corrupt blocked slots data"); }
+            if (Array.isArray(parsed)) setBlockedSlots(new Set(parsed));
         }
-
-        // Load Affiliate Codes (Local Storage fallback)
+        
         const storedAffiliates = localStorage.getItem('daryl_affiliates');
         if (storedAffiliates) {
-          try {
             const parsed = JSON.parse(storedAffiliates);
-            if (parsed && typeof parsed === 'object') {
-                setAffiliateCodes(parsed);
-            }
-          } catch (e) { console.error("Corrupt affiliate data"); }
+            if (parsed && typeof parsed === 'object') setAffiliateCodes(parsed);
         }
+      } catch (e) { console.error("Local load error", e); }
 
-        // DB INITIALIZATION & LOADING
-        if (sql) {
-          try {
-            // A. Create Tables if they don't exist (Auto-Migration)
-            await sql`
-              CREATE TABLE IF NOT EXISTS bookings (
-                id TEXT PRIMARY KEY,
-                date TEXT NOT NULL,
-                slot_id TEXT NOT NULL,
-                time TEXT NOT NULL,
-                service TEXT NOT NULL,
-                client TEXT NOT NULL,
-                status TEXT NOT NULL,
-                used_referral_code TEXT,
-                referral_claimed BOOLEAN DEFAULT FALSE
-              )
-            `;
-            
-            await sql`
-              CREATE TABLE IF NOT EXISTS affiliates (
-                phone TEXT PRIMARY KEY,
-                code TEXT UNIQUE NOT NULL
-              )
-            `;
+      // DB INITIALIZATION & LOADING
+      if (sql) {
+        try {
+          // A. Create Tables if they don't exist (Auto-Migration)
+          await sql`
+            CREATE TABLE IF NOT EXISTS bookings (
+              id TEXT PRIMARY KEY,
+              date TEXT NOT NULL,
+              slot_id TEXT NOT NULL,
+              time TEXT NOT NULL,
+              service TEXT NOT NULL,
+              client TEXT NOT NULL,
+              status TEXT NOT NULL,
+              used_referral_code TEXT,
+              referral_claimed BOOLEAN DEFAULT FALSE
+            )
+          `;
+          
+          await sql`
+            CREATE TABLE IF NOT EXISTS affiliates (
+              phone TEXT PRIMARY KEY,
+              code TEXT UNIQUE NOT NULL
+            )
+          `;
 
-            // B. Load Bookings
-            const result = await sql`SELECT * FROM bookings ORDER BY date ASC`;
-            if (result && result.length > 0) {
-              const loadedBookings = result.map((row: any) => {
-                // Parse JSON stored as TEXT
-                const clientObj = typeof row.client === 'string' ? JSON.parse(row.client) : row.client;
-                const serviceObj = typeof row.service === 'string' ? JSON.parse(row.service) : row.service;
-                
-                return {
-                  id: row.id,
-                  date: row.date,
-                  slotId: row.slot_id,
-                  time: row.time,
-                  service: serviceObj,
-                  client: clientObj,
-                  status: row.status || 'pending',
-                  usedReferralCode: row.used_referral_code || clientObj.usedReferralCode,
-                  referralClaimed: row.referral_claimed || clientObj.referralClaimed
-                };
-              });
-              setBookings(loadedBookings);
-            }
-
-            // C. Load Affiliates
-            const affiliatesResult = await sql`SELECT phone, code FROM affiliates`;
-            if (affiliatesResult && affiliatesResult.length > 0) {
-              const dbAffiliates: Record<string, string> = {};
-              affiliatesResult.forEach((row: any) => {
-                  dbAffiliates[row.code] = row.phone;
-              });
-              // Merge with local just in case, but DB takes precedence
-              setAffiliateCodes(prev => ({ ...prev, ...dbAffiliates }));
-            }
-
-          } catch (error) {
-            console.warn("DB init failed, falling back to local storage.", error);
-            // Fallback: Try to load bookings from local storage if DB fails
-            const localBookings = localStorage.getItem('daryl_bookings');
-            if (localBookings) {
-              try { 
-                  const parsed = JSON.parse(localBookings);
-                  if (Array.isArray(parsed)) setBookings(parsed); 
-              } catch (e) {}
-            }
+          // B. Load Bookings from DB
+          const result = await sql`SELECT * FROM bookings ORDER BY date ASC`;
+          if (result) {
+            const loadedBookings = result.map((row: any) => {
+              // Parse JSON stored as TEXT
+              const clientObj = typeof row.client === 'string' ? JSON.parse(row.client) : row.client;
+              const serviceObj = typeof row.service === 'string' ? JSON.parse(row.service) : row.service;
+              
+              return {
+                id: row.id,
+                date: row.date,
+                slotId: row.slot_id,
+                time: row.time,
+                service: serviceObj,
+                client: clientObj,
+                status: row.status || 'pending',
+                usedReferralCode: row.used_referral_code || clientObj.usedReferralCode,
+                referralClaimed: row.referral_claimed || clientObj.referralClaimed
+              };
+            });
+            setBookings(loadedBookings);
+            dbLoaded = true;
+            console.log("Bookings loaded from DB:", loadedBookings.length);
           }
-        } else {
-          // Fallback Booking Load if no DB configured
-          const localBookings = localStorage.getItem('daryl_bookings');
-          if (localBookings) {
-            try {
+
+          // C. Load Affiliates from DB
+          const affiliatesResult = await sql`SELECT phone, code FROM affiliates`;
+          if (affiliatesResult) {
+            const dbAffiliates: Record<string, string> = {};
+            affiliatesResult.forEach((row: any) => {
+                dbAffiliates[row.code] = row.phone;
+            });
+            setAffiliateCodes(prev => ({ ...prev, ...dbAffiliates }));
+            console.log("Affiliates loaded from DB");
+          }
+
+        } catch (error) {
+          console.warn("DB Connection failed. Falling back to LocalStorage.", error);
+          // Fallback handled below
+        }
+      }
+
+      // Fallback: If DB failed or is null, load bookings from LocalStorage
+      if (!dbLoaded) {
+        const localBookings = localStorage.getItem('daryl_bookings');
+        if (localBookings) {
+          try { 
               const parsed = JSON.parse(localBookings);
-              if (Array.isArray(parsed)) setBookings(parsed);
-            } catch (e) { console.error("Corrupt booking data"); }
-          }
+              if (Array.isArray(parsed)) setBookings(parsed); 
+          } catch (e) {}
         }
-      } catch (err) {
-        console.error("Critical Init Error:", err);
       }
 
       setIsInitialized(true);
@@ -210,7 +198,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setSchedules(nextDays);
   }, [blockedSlots, isInitialized]);
 
-  // 3. Persist Data (Local Backup)
+  // 3. Persist Data (Local Backup always runs)
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('daryl_bookings', JSON.stringify(bookings));
@@ -232,6 +220,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
     };
 
+    // Optimistic Update (Immediate UI response)
     setBookings(prev => [...prev, bookingToSave]);
 
     if (sql) {
@@ -318,6 +307,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               await sql`INSERT INTO affiliates (phone, code) VALUES (${cleanPhone}, ${cleanCode})`;
           } catch (e) {
               console.error("SQL Error RegisterAffiliate:", e);
+              // Rollback optimistic update if needed, but for now we rely on DB constraints
               return false;
           }
       }
@@ -337,7 +327,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       // 1. Find the code owned by this user
       const myCode = getAffiliateCode(targetPhone);
 
-      if (!myCode) return { count: 0, percentage: 0, code: null };
+      if (!myCode) return { count: 0, creditAmount: 0, code: null };
 
       // 2. Find bookings that USED this code
       const eligibleReferrals = bookings.filter(b => {
@@ -354,9 +344,12 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
 
       const count = eligibleReferrals.length;
+      // UPDATE: 3 EUR per referral instead of percentage
+      const creditAmount = count * 3; 
+
       return {
           count,
-          percentage: Math.min(count * 10, 100), // Cap visual percentage at 100%
+          creditAmount,
           code: myCode
       };
   };
@@ -405,15 +398,24 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (availableReferrals.length === 0) return;
 
-      // Burn max 10 referrals (100%) or less if fewer available
-      const referralsToBurn = availableReferrals.slice(0, 10);
-      const discountPercentage = referralsToBurn.length * 10;
+      // UPDATE LOGIC: Burn just enough referrals to cover price, or all of them if not enough
+      const currentPrice = parseInt(targetBooking.service.price.replace(/[^0-9]/g, '')) || 0;
+      
+      // Cost of referral point = 3 EUR
+      const referralValue = 3;
+      
+      // Calculate how many referrals are needed to cover the price
+      const referralsNeeded = Math.ceil(currentPrice / referralValue);
+      
+      // Burn max available or needed
+      const referralsToBurn = availableReferrals.slice(0, referralsNeeded);
+      
+      const discountAmount = referralsToBurn.length * referralValue;
       
       // Calculate new price
-      const currentPrice = parseInt(targetBooking.service.price.replace(/[^0-9]/g, '')) || 0;
-      const newPriceValue = Math.max(0, currentPrice * (1 - discountPercentage / 100));
-      const newPriceString = discountPercentage >= 100 ? '0 €' : `${newPriceValue.toFixed(0)} €`;
-      const suffix = discountPercentage >= 100 ? '(OFFERT PARRAIN)' : `(-${discountPercentage}%)`;
+      const newPriceValue = Math.max(0, currentPrice - discountAmount);
+      const newPriceString = `${newPriceValue.toFixed(0)} €`;
+      const suffix = newPriceValue === 0 ? '(OFFERT PARRAIN)' : `(-${discountAmount}€)`;
 
       // 3. Update State
       setBookings(prev => prev.map(b => {

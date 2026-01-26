@@ -28,7 +28,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   // Get data for this phone
-  const { count, percentage, code: existingCode } = phone.length > 9 ? getReferralBalance(phone) : { count: 0, percentage: 0, code: null };
+  const { count, creditAmount, code: existingCode } = phone.length > 9 ? getReferralBalance(phone) : { count: 0, creditAmount: 0, code: null };
 
   const handleCreateCode = async () => {
       if (newCode.length !== 4) {
@@ -126,13 +126,9 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose 
                             <span className="text-2xl font-bold text-white font-space">{count}</span>
                         </div>
                         <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5 relative overflow-hidden">
-                            <div 
-                                className="absolute inset-0 bg-apple-blue/20 transition-all duration-1000"
-                                style={{ width: `${Math.min(percentage, 100)}%` }}
-                            />
                             <div className="relative z-10">
-                                <span className="text-[10px] text-white/40 uppercase block mb-1">Réduction</span>
-                                <span className="text-2xl font-bold text-apple-blue font-space">{percentage}%</span>
+                                <span className="text-[10px] text-white/40 uppercase block mb-1">Cagnotte</span>
+                                <span className="text-2xl font-bold text-apple-blue font-space">{creditAmount} €</span>
                             </div>
                         </div>
                     </div>
@@ -143,7 +139,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose 
                         <div className="text-4xl font-black text-white font-space tracking-widest bg-white/5 py-4 rounded-xl border border-white/10 border-dashed">
                             {existingCode}
                         </div>
-                        <p className="text-[10px] text-white/30 font-mono mt-4">Partagez ce code avec vos amis pour qu'ils l'utilisent lors de leur réservation.</p>
+                        <p className="text-[10px] text-white/30 font-mono mt-4">Partagez ce code : vos amis gagnent, vous gagnez <span className="text-apple-blue">3 €</span> par coupe.</p>
                     </div>
                 </div>
             )}
