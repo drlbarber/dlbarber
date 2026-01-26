@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Scissors, Gift } from 'lucide-react';
+import { Gift } from 'lucide-react';
 import { AffiliateModal } from './AffiliateModal';
 
 export const Navbar = () => {
@@ -36,7 +36,6 @@ export const Navbar = () => {
         <div className="px-6 flex items-center justify-between">
             {/* Minimal Logo */}
             <div className="flex items-center gap-2">
-            <Scissors className="w-4 h-4 text-white opacity-90" />
             <span className="text-sm font-semibold tracking-wide text-white opacity-90">DARYL</span>
             </div>
 
