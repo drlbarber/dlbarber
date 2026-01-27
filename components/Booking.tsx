@@ -102,7 +102,7 @@ export const Booking = () => {
     const smsBody = `Nouvelle réservation :\n${guestForm.firstName} ${guestForm.lastName}\n${d.weekday} ${d.day} ${d.month} à ${slot.time}\nService: ${selectedService.name}\nTél: ${guestForm.phone}`;
     
     // Open SMS app with Daryl's number
-    window.open(`sms:0611594979?&body=${encodeURIComponent(smsBody)}`, '_self');
+    window.open(`sms:0611584979?&body=${encodeURIComponent(smsBody)}`, '_self');
     // ----------------------------
 
     setTimeout(() => {
