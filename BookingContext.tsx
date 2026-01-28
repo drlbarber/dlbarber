@@ -52,6 +52,7 @@ interface BookingContextType {
   applyLoyaltyFreeCut: (bookingId: string) => Promise<void>;
   registerAffiliateCode: (phone: string, code: string) => Promise<boolean>;
   getAffiliateCode: (phone: string) => string | null;
+  isDbConnected: boolean;
 }
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
@@ -60,6 +61,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [schedules, setSchedules] = useState<DaySchedule[]>([]);
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<Set<string>>(new Set());
+  const [isDbConnected, setIsDbConnected] = useState(false);
   
   // Mapping: Code (key) -> Phone (value)
   const [affiliateCodes, setAffiliateCodes] = useState<Record<string, string>>({}); 
@@ -149,6 +151,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             });
             setBookings(loadedBookings);
             dbLoaded = true;
+            setIsDbConnected(true);
             console.log("Bookings loaded from DB:", loadedBookings.length);
           }
 
@@ -165,6 +168,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         } catch (error) {
           console.warn("DB Connection failed. Falling back to LocalStorage.", error);
+          setIsDbConnected(false);
           // Fallback handled below
         }
       }
@@ -523,7 +527,8 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       redeemReferralRewards,
       applyLoyaltyFreeCut,
       registerAffiliateCode,
-      getAffiliateCode
+      getAffiliateCode,
+      isDbConnected
     }}>
       {children}
     </BookingContext.Provider>

@@ -21,9 +21,20 @@ const getEnv = (key: string) => {
 };
 
 // Récupération de l'URL de la base de données
-// NOTE: Pour que cela fonctionne en production, assurez-vous que la variable d'environnement 
-// VITE_DATABASE_URL ou DATABASE_URL est définie dans Netlify "Site settings > Environment variables"
-const connectionString = getEnv('NETLIFY_DATABASE_URL') || getEnv('DATABASE_URL') || getEnv('VITE_DATABASE_URL');
+// PRIORITÉ :
+// 1. Variable d'environnement (Production)
+// 2. LocalStorage (Configuration manuelle via AdminInterface pour démo/test)
+const getConnectionString = () => {
+    const envUrl = getEnv('NETLIFY_DATABASE_URL') || getEnv('DATABASE_URL') || getEnv('VITE_DATABASE_URL');
+    if (envUrl) return envUrl;
+
+    if (typeof window !== 'undefined') {
+        return localStorage.getItem('daryl_db_url');
+    }
+    return undefined;
+};
+
+const connectionString = getConnectionString();
 
 let sqlClient: any = null;
 

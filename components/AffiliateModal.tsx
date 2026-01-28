@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useBooking } from '../BookingContext';
 import { X, ArrowRight, Ticket, Users, Coins } from 'lucide-react';
@@ -128,7 +127,7 @@ export const AffiliateModal: React.FC<AffiliateModalProps> = ({ isOpen, onClose 
                         
                         <button 
                             onClick={() => setShowIntro(false)}
-                            className="w-full py-3 text-xs font-mono uppercase tracking-wider text-white/40 hover:text-white transition-colors"
+                            className="w-full py-3 bg-[#1a1a1a] border border-white/10 text-white/60 font-mono text-xs uppercase tracking-wider rounded-xl hover:bg-[#222] hover:text-white hover:border-white/20 transition-all active:scale-95"
                         >
                             Déjà membre ? Voir mon solde
                         </button>

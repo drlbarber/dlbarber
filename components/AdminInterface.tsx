@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useBooking } from '../BookingContext';
 import { 
   X, Lock, Settings, Power, Phone, CheckCircle, XCircle, 
-  Activity, Trash2, UserPlus, Ban, Search, Gift, Zap, Calendar, Star
+  Activity, Trash2, UserPlus, Ban, Search, Gift, Zap, Calendar, Star, Wifi, WifiOff, Database
 } from 'lucide-react';
 import { ClientBooking } from '../types';
 
@@ -25,7 +25,8 @@ export const AdminInterface = () => {
     getReferralBalance,
     redeemReferralRewards,
     applyLoyaltyFreeCut,
-    getClientVisitCount
+    getClientVisitCount,
+    isDbConnected
   } = useBooking();
 
   const [pin, setPin] = useState('');
@@ -38,6 +39,10 @@ export const AdminInterface = () => {
   const [isManualBookingOpen, setIsManualBookingOpen] = useState(false);
   const [manualSlotId, setManualSlotId] = useState<string | null>(null);
   const [manualName, setManualName] = useState('');
+
+  // DB Config State
+  const [showDbConfig, setShowDbConfig] = useState(false);
+  const [dbUrlInput, setDbUrlInput] = useState('');
 
   // Loyalty Lookup State
   const [scanPhone, setScanPhone] = useState('');
@@ -64,8 +69,27 @@ export const AdminInterface = () => {
     }
   }, [pin, authenticate]);
 
+  // Load existing DB URL into input when config opens
+  useEffect(() => {
+      if (showDbConfig) {
+          setDbUrlInput(localStorage.getItem('daryl_db_url') || '');
+      }
+  }, [showDbConfig]);
+
   const handleKeypad = (num: string) => {
     if (pin.length < 4) setPin(prev => prev + num);
+  };
+
+  const handleSaveDbUrl = () => {
+      if (dbUrlInput.trim()) {
+          localStorage.setItem('daryl_db_url', dbUrlInput.trim());
+          alert("Configuration sauvegardée. L'application va redémarrer.");
+          window.location.reload();
+      } else {
+          localStorage.removeItem('daryl_db_url');
+          alert("Configuration supprimée. Retour au mode hors ligne.");
+          window.location.reload();
+      }
   };
 
   const handleStatusUpdate = (status: 'confirmed' | 'rejected') => {
@@ -175,45 +199,87 @@ export const AdminInterface = () => {
           <X className="w-6 h-6" />
         </button>
 
-        <div className="w-full max-w-sm flex flex-col items-center">
+        <div className="w-full max-w-sm flex flex-col items-center relative">
+          
+          {/* DB Config Button (Bottom Left of Panel) */}
+          {!showDbConfig && (
+            <button 
+                onClick={() => setShowDbConfig(true)}
+                className="absolute -top-16 left-0 p-2 text-white/20 hover:text-white transition-colors"
+                title="Configurer Base de Données"
+            >
+                <Settings className="w-5 h-5" />
+            </button>
+          )}
+
           <div className="mb-12 flex flex-col items-center">
-            <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-6 border border-white/10">
+            <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-6 border border-white/10 relative">
               <Lock className="w-6 h-6 text-white" />
+              {isDbConnected && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-[#111]"></div>
+              )}
             </div>
             <h2 className="text-2xl font-space font-bold text-white mb-2">Accès Système</h2>
-            <p className="text-white/40 text-sm font-mono">Entrez code PIN</p>
+            <p className="text-white/40 text-sm font-mono">
+                {isDbConnected ? 'Système ONLINE' : 'Mode HORS LIGNE'}
+            </p>
           </div>
 
-          <div className={`flex gap-6 mb-12 ${isShaking ? 'animate-[drift-fast_0.2s_ease-in-out]' : ''}`}>
-            {[0, 1, 2, 3].map((i) => (
-              <div 
-                key={i}
-                className={`w-4 h-4 rounded-full transition-all duration-300 ${
-                  i < pin.length ? 'bg-white scale-110 shadow-[0_0_10px_white]' : 'bg-white/10'
-                }`}
-              />
-            ))}
-          </div>
+          {showDbConfig ? (
+               <div className="w-full bg-[#111] p-6 rounded-2xl border border-white/10 animate-fade-in mb-8">
+                   <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+                       <Database className="w-4 h-4 text-apple-blue" />
+                       Connexion BDD
+                   </h3>
+                   <p className="text-[10px] text-white/50 mb-3">
+                       Collez votre lien de connexion Neon/Postgres ici (commence par <code>postgres://</code>)
+                   </p>
+                   <input 
+                        type="text" 
+                        value={dbUrlInput} 
+                        onChange={(e) => setDbUrlInput(e.target.value)}
+                        placeholder="postgres://user:pass@endpoint.neon.tech/neondb"
+                        className="w-full bg-black border border-white/20 rounded p-3 text-xs text-white font-mono mb-4 focus:border-apple-blue outline-none"
+                   />
+                   <div className="flex gap-2">
+                       <button onClick={() => setShowDbConfig(false)} className="flex-1 py-3 bg-white/5 rounded hover:bg-white/10 text-white/60 text-xs font-bold uppercase">Annuler</button>
+                       <button onClick={handleSaveDbUrl} className="flex-1 py-3 bg-white text-black rounded hover:bg-gray-200 text-xs font-bold uppercase">Sauvegarder</button>
+                   </div>
+               </div>
+          ) : (
+            <>
+                <div className={`flex gap-6 mb-12 ${isShaking ? 'animate-[drift-fast_0.2s_ease-in-out]' : ''}`}>
+                    {[0, 1, 2, 3].map((i) => (
+                    <div 
+                        key={i}
+                        className={`w-4 h-4 rounded-full transition-all duration-300 ${
+                        i < pin.length ? 'bg-white scale-110 shadow-[0_0_10px_white]' : 'bg-white/10'
+                        }`}
+                    />
+                    ))}
+                </div>
 
-          <div className="grid grid-cols-3 gap-6 w-full px-4">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((num) => (
-              <button
-                key={num}
-                onClick={() => handleKeypad(num.toString())}
-                className={`aspect-square flex items-center justify-center rounded-full text-2xl font-space font-bold text-white hover:bg-white/10 active:bg-white/20 transition-colors active:scale-95 ${num === 0 ? 'col-start-2' : ''}`}
-              >
-                {num}
-              </button>
-            ))}
-             <div className="col-start-3 row-start-4 flex items-center justify-center">
-              <button
-                onClick={() => setPin(prev => prev.slice(0, -1))}
-                className="w-full aspect-square flex items-center justify-center rounded-full text-white/50 hover:text-white transition-colors active:scale-95"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-          </div>
+                <div className="grid grid-cols-3 gap-6 w-full px-4">
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((num) => (
+                    <button
+                        key={num}
+                        onClick={() => handleKeypad(num.toString())}
+                        className={`aspect-square flex items-center justify-center rounded-full text-2xl font-space font-bold text-white hover:bg-white/10 active:bg-white/20 transition-colors active:scale-95 ${num === 0 ? 'col-start-2' : ''}`}
+                    >
+                        {num}
+                    </button>
+                    ))}
+                    <div className="col-start-3 row-start-4 flex items-center justify-center">
+                    <button
+                        onClick={() => setPin(prev => prev.slice(0, -1))}
+                        className="w-full aspect-square flex items-center justify-center rounded-full text-white/50 hover:text-white transition-colors active:scale-95"
+                    >
+                        <X className="w-6 h-6" />
+                    </button>
+                    </div>
+                </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -242,7 +308,19 @@ export const AdminInterface = () => {
             </div>
             <div>
                 <h1 className="font-space font-bold text-white text-lg leading-tight">Admin</h1>
-                <p className="text-[10px] text-white/40 font-mono tracking-wider">CONNECTÉ</p>
+                <div className="flex items-center gap-2 mt-1">
+                    {isDbConnected ? (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/10 border border-green-500/20">
+                            <Wifi className="w-3 h-3 text-green-500" />
+                            <span className="text-[9px] text-green-500 font-bold tracking-wider">SYNC LIVE</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
+                            <WifiOff className="w-3 h-3 text-red-500" />
+                            <span className="text-[9px] text-red-500 font-bold tracking-wider">OFFLINE</span>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
         <button 
@@ -252,6 +330,15 @@ export const AdminInterface = () => {
           <Power className="w-4 h-4" />
         </button>
       </header>
+
+      {/* Warning Banner if Offline */}
+      {!isDbConnected && (
+        <div className="bg-red-500/10 border-b border-red-500/10 px-6 py-2">
+            <p className="text-[10px] text-red-400 text-center font-mono">
+                ⚠️ Aucune base de données. Les données sont locales à cet appareil.
+            </p>
+        </div>
+      )}
 
       {/* View Selector */}
       <div className="p-4 border-b border-white/5 bg-[#050505]">

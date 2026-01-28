@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useBooking } from '../BookingContext';
 import { ServiceItem, BookingForm } from '../types';
