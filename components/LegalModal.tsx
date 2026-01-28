@@ -36,10 +36,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose }) => {
                 <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-1 text-xs sm:text-sm">
                     <p><strong className="text-white">Dénomination :</strong> Daryl Barber</p>
                     <p><strong className="text-white">Statut :</strong> Entreprise Individuelle (EI)</p>
-                    <p><strong className="text-white">Adresse :</strong> [VOTRE ADRESSE POSTALE ICI]</p>
-                    <p><strong className="text-white">SIRET :</strong> [VOTRE NUMÉRO SIRET ICI]</p>
                     <p><strong className="text-white">Téléphone :</strong> 06 11 58 49 79</p>
-                    <p><strong className="text-white">Email :</strong> [VOTRE EMAIL ICI]</p>
                     <p><strong className="text-white">Directeur de la publication :</strong> Daryl [NOM]</p>
                 </div>
             </section>
@@ -75,7 +72,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({ isOpen, onClose }) => {
                         <p><strong className="text-white">Données collectées :</strong> Nom, Prénom, Numéro de téléphone.</p>
                         <p><strong className="text-white">Finalité :</strong> Gestion des rendez-vous, envoi de SMS de confirmation, et programme de fidélité.</p>
                         <p><strong className="text-white">Conservation :</strong> Les données sont conservées pour une durée de 3 ans après le dernier contact.</p>
-                        <p><strong className="text-white">Vos Droits :</strong> Vous disposez d'un droit d'accès, de rectification et de suppression de vos données. Pour l'exercer, contactez-nous par téléphone ou email.</p>
+                        <p><strong className="text-white">Vos Droits :</strong> Vous disposez d'un droit d'accès, de rectification et de suppression de vos données. Pour l'exercer, contactez-nous par téléphone.</p>
                     </div>
 
                     <p className="text-xs text-white/50 bg-black/50 p-3 rounded-lg">
