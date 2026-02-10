@@ -283,10 +283,11 @@ export const AdminInterface = () => {
             <p className="text-white/40 text-sm font-mono">
                 {isDbConnected ? 'Système ONLINE' : 'Mode HORS LIGNE'}
             </p>
-            {dbError && (
+            {/* Petit message d'erreur si pas de popup */}
+            {dbError && !showDbConfig && (
                 <div className="mt-2 bg-red-500/10 p-2 rounded max-w-[280px] text-center border border-red-500/20">
                     <p className="text-[10px] text-red-400 font-mono font-bold uppercase mb-1">Erreur de Connexion</p>
-                    <p className="text-[9px] text-red-300 font-mono break-all">{dbError}</p>
+                    <p className="text-[9px] text-red-300 font-mono break-all line-clamp-2">{dbError}</p>
                 </div>
             )}
           </div>
@@ -298,6 +299,19 @@ export const AdminInterface = () => {
                        Lier la Base de Données
                    </h3>
                    
+                   {/* Affichage de l'erreur REELLE de connexion ici */}
+                   {dbError && (
+                       <div className="bg-red-500/10 border border-red-500/20 p-3 rounded mb-4">
+                           <p className="text-[10px] text-red-400 font-bold uppercase mb-1 flex items-center gap-1">
+                               <AlertCircle className="w-3 h-3" />
+                               Échec de connexion :
+                           </p>
+                           <p className="text-[10px] text-white/70 font-mono break-all">
+                               {dbError}
+                           </p>
+                       </div>
+                   )}
+
                    <p className="text-xs text-white/60 mb-4">
                        Si la connexion automatique échoue, vous pouvez forcer le lien ici.
                    </p>
@@ -443,6 +457,19 @@ export const AdminInterface = () => {
                        Lier la Base de Données
                    </h3>
                    
+                   {/* Affichage de l'erreur REELLE de connexion ici */}
+                   {dbError && (
+                       <div className="bg-red-500/10 border border-red-500/20 p-3 rounded mb-4">
+                           <p className="text-[10px] text-red-400 font-bold uppercase mb-1 flex items-center gap-1">
+                               <AlertCircle className="w-3 h-3" />
+                               Échec de connexion :
+                           </p>
+                           <p className="text-[10px] text-white/70 font-mono break-all">
+                               {dbError}
+                           </p>
+                       </div>
+                   )}
+
                    <p className="text-xs text-white/60 mb-4">
                        Si la connexion automatique échoue, vous pouvez forcer le lien ici.
                    </p>
