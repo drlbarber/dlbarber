@@ -23,21 +23,25 @@ const getEnv = (key: string) => {
 // Récupération de l'URL de la base de données
 const getConnectionString = () => {
     // URL par défaut fournie pour le projet Daryl Barber
-    let url = "postgresql://neondb_owner:npg_lu2eOvKXfM1y@ep-billowing-frog-ab0q17jx-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
+    const defaultUrl = "postgresql://neondb_owner:npg_lu2eOvKXfM1y@ep-billowing-frog-ab0q17jx-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
 
-    // 1. Env Vars (Prioritaire si défini en prod)
+    // 1. Env Vars (Prioritaire si défini en prod via Vercel/Netlify)
     const envUrl = getEnv('NETLIFY_DATABASE_URL') || getEnv('DATABASE_URL') || getEnv('VITE_DATABASE_URL');
     if (envUrl) {
-        url = envUrl;
+        return envUrl;
     } 
-    // 2. LocalStorage (Permet de surcharger via l'interface Admin si nécessaire)
-    else if (typeof window !== 'undefined') {
+    
+    // 2. LocalStorage (Permet de surcharger UNIQUEMENT si une URL valide est fournie)
+    if (typeof window !== 'undefined') {
         const localUrl = localStorage.getItem('daryl_db_url');
-        if (localUrl) url = localUrl;
+        // On n'utilise l'override local que s'il semble valide (commence par postgres)
+        if (localUrl && localUrl.trim().startsWith('postgres')) {
+            return localUrl.trim();
+        }
     }
 
-    // Nettoyage des espaces blancs accidentels
-    return url ? url.trim() : "";
+    // 3. Fallback : Utiliser l'URL par défaut hardcodée
+    return defaultUrl;
 };
 
 const connectionString = getConnectionString();
@@ -48,7 +52,7 @@ if (connectionString) {
   try {
     // Initialisation du client Neon en mode Serverless
     sqlClient = neon(connectionString);
-    console.log("Database connection initialized.");
+    console.log("Database connection initialized with: " + (connectionString.includes('@') ? '***protected***' : 'local'));
   } catch (err) {
     console.error("Failed to initialize database client:", err);
   }
