@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { DaySchedule, TimeSlot, SlotStatus, ClientBooking, BookingStatus } from './types';
 import { sql } from './db';
 
@@ -34,12 +34,12 @@ const generateDefaultSlots = (): TimeSlot[] => {
 interface BookingContextType {
   schedules: DaySchedule[];
   bookings: ClientBooking[];
-  addBooking: (booking: ClientBooking) => void;
+  addBooking: (booking: ClientBooking) => Promise<void>;
   deleteBooking: (bookingId: string) => void;
   updateBookingStatus: (bookingId: string, status: BookingStatus) => void;
   getBookingsForDate: (date: string) => ClientBooking[];
   getClientVisitCount: (phone: string) => number;
-  toggleSlotAvailability: (date: string, slotId: string) => void;
+  toggleSlotAvailability: (date: string, slotId: string) => Promise<void>;
   isAdminMode: boolean;
   setAdminMode: (mode: boolean) => void;
   isAuthenticated: boolean;
@@ -53,6 +53,9 @@ interface BookingContextType {
   registerAffiliateCode: (phone: string, code: string) => Promise<boolean>;
   getAffiliateCode: (phone: string) => string | null;
   isDbConnected: boolean;
+  dbError: string | null;
+  initializeDb: () => Promise<void>;
+  refreshData: () => Promise<void>;
 }
 
 const BookingContext = createContext<BookingContextType | undefined>(undefined);
@@ -61,7 +64,10 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [schedules, setSchedules] = useState<DaySchedule[]>([]);
   const [bookings, setBookings] = useState<ClientBooking[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<Set<string>>(new Set());
+  
+  // DB Status
   const [isDbConnected, setIsDbConnected] = useState(false);
+  const [dbError, setDbError] = useState<string | null>(null);
   
   // Mapping: Code (key) -> Phone (value)
   const [affiliateCodes, setAffiliateCodes] = useState<Record<string, string>>({}); 
@@ -74,7 +80,6 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return false;
   });
 
-  // If authenticated on load, default to Admin Mode true so he sees calendar immediately
   const [isAdminMode, setAdminMode] = useState(() => {
       if (typeof window !== 'undefined') {
           return localStorage.getItem('daryl_admin_session') === 'true';
@@ -84,59 +89,18 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // 1. Initialize Data & DB Structure
-  useEffect(() => {
-    const initData = async () => {
-      let dbLoaded = false;
-      
-      // Load Local Data first (Fast render)
-      try {
-        const storedBlocked = localStorage.getItem('daryl_blocked_slots');
-        if (storedBlocked) {
-            const parsed = JSON.parse(storedBlocked);
-            if (Array.isArray(parsed)) setBlockedSlots(new Set(parsed));
-        }
-        
-        const storedAffiliates = localStorage.getItem('daryl_affiliates');
-        if (storedAffiliates) {
-            const parsed = JSON.parse(storedAffiliates);
-            if (parsed && typeof parsed === 'object') setAffiliateCodes(parsed);
-        }
-      } catch (e) { console.error("Local load error", e); }
+  // --- CORE DATA LOADING FUNCTION ---
+  const loadDataFromDb = useCallback(async () => {
+    if (!sql) return;
 
-      // DB INITIALIZATION & LOADING
-      if (sql) {
-        try {
-          // A. Create Tables if they don't exist (Auto-Migration)
-          await sql`
-            CREATE TABLE IF NOT EXISTS bookings (
-              id TEXT PRIMARY KEY,
-              date TEXT NOT NULL,
-              slot_id TEXT NOT NULL,
-              time TEXT NOT NULL,
-              service TEXT NOT NULL,
-              client TEXT NOT NULL,
-              status TEXT NOT NULL,
-              used_referral_code TEXT,
-              referral_claimed BOOLEAN DEFAULT FALSE
-            )
-          `;
-          
-          await sql`
-            CREATE TABLE IF NOT EXISTS affiliates (
-              phone TEXT PRIMARY KEY,
-              code TEXT UNIQUE NOT NULL
-            )
-          `;
-
-          // B. Load Bookings from DB
-          const result = await sql`SELECT * FROM bookings ORDER BY date ASC`;
-          if (result) {
+    try {
+        // 1. Load Bookings
+        const result = await sql`SELECT * FROM bookings WHERE is_archived = FALSE ORDER BY date ASC`;
+        if (result) {
             const loadedBookings = result.map((row: any) => {
-              // Parse JSON stored as TEXT
+              // Handle potential double stringification or direct object
               const clientObj = typeof row.client === 'string' ? JSON.parse(row.client) : row.client;
               const serviceObj = typeof row.service === 'string' ? JSON.parse(row.service) : row.service;
-              
               return {
                 id: row.id,
                 date: row.date,
@@ -150,44 +114,149 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
               };
             });
             setBookings(loadedBookings);
-            dbLoaded = true;
-            setIsDbConnected(true);
-            console.log("Bookings loaded from DB:", loadedBookings.length);
-          }
+        }
 
-          // C. Load Affiliates from DB
-          const affiliatesResult = await sql`SELECT phone, code FROM affiliates`;
-          if (affiliatesResult) {
+        // 2. Load Affiliates
+        const affiliatesResult = await sql`SELECT phone, code FROM affiliates`;
+        if (affiliatesResult) {
             const dbAffiliates: Record<string, string> = {};
             affiliatesResult.forEach((row: any) => {
                 dbAffiliates[row.code] = row.phone;
             });
             setAffiliateCodes(prev => ({ ...prev, ...dbAffiliates }));
-            console.log("Affiliates loaded from DB");
+        }
+
+        // 3. Load Blocked Slots
+        const blockedResult = await sql`SELECT date, slot_id FROM blocked_slots`;
+        if (blockedResult) {
+             const dbBlocked = new Set<string>();
+             blockedResult.forEach((row: any) => {
+                 dbBlocked.add(`${row.date}_${row.slot_id}`);
+             });
+             setBlockedSlots(dbBlocked);
+        }
+
+        setIsDbConnected(true);
+        if (dbError) setDbError(null); // Clear previous errors on success
+
+    } catch (error: any) {
+        console.error("Data Load Error:", error);
+        // Only set global error if it's a hard failure that affects usage, 
+        // otherwise silent retry is better for UX
+        if (!isDbConnected) setDbError(error.message); 
+    }
+  }, [sql, isDbConnected, dbError]);
+
+  // --- POLLING FOR DATA SYNC ---
+  useEffect(() => {
+    if (isDbConnected && isInitialized) {
+        // Poll every 15 seconds to keep data fresh
+        const intervalId = setInterval(() => {
+            loadDataFromDb();
+        }, 15000);
+        return () => clearInterval(intervalId);
+    }
+  }, [isDbConnected, isInitialized, loadDataFromDb]);
+
+
+  // --- DB INITIALIZATION LOGIC ---
+  const initializeDb = async () => {
+      if (!sql) {
+          console.warn("SQL Client not available");
+          setDbError("Client SQL non initialisé (vérifiez db.ts)");
+          return;
+      }
+
+      try {
+          console.log("Attempting to connect to Neon DB...");
+          setDbError(null);
+
+          // 1. Test Simple Query
+          await sql`SELECT 1`;
+          console.log("Connection successful (SELECT 1)");
+
+          // 2. Create Tables
+          await sql`
+            CREATE TABLE IF NOT EXISTS bookings (
+              id TEXT PRIMARY KEY,
+              date TEXT NOT NULL,
+              slot_id TEXT NOT NULL,
+              time TEXT NOT NULL,
+              service TEXT NOT NULL,
+              client TEXT NOT NULL,
+              status TEXT NOT NULL,
+              used_referral_code TEXT,
+              referral_claimed BOOLEAN DEFAULT FALSE,
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+              is_archived BOOLEAN DEFAULT FALSE
+            )
+          `;
+          
+          await sql`
+            CREATE TABLE IF NOT EXISTS affiliates (
+              phone TEXT PRIMARY KEY,
+              code TEXT UNIQUE NOT NULL,
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+          `;
+
+          await sql`
+            CREATE TABLE IF NOT EXISTS blocked_slots (
+              date TEXT NOT NULL,
+              slot_id TEXT NOT NULL,
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (date, slot_id)
+            )
+          `;
+          console.log("Tables created/verified.");
+
+          // 3. Migrate Columns
+          try {
+             await sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP`;
+             await sql`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE`;
+             
+             // Indexes
+             await sql`CREATE INDEX IF NOT EXISTS idx_bookings_date ON bookings(date)`;
+             await sql`CREATE INDEX IF NOT EXISTS idx_bookings_referral ON bookings(used_referral_code)`;
+             await sql`CREATE INDEX IF NOT EXISTS idx_blocked_slots_lookup ON blocked_slots(date, slot_id)`;
+          } catch (migrationError) {
+             console.warn("Migration warning:", migrationError);
           }
 
-        } catch (error) {
-          console.warn("DB Connection failed. Falling back to LocalStorage.", error);
-          setIsDbConnected(false);
-          // Fallback handled below
-        }
-      }
+          // 4. Initial Data Load
+          await loadDataFromDb();
 
-      // Fallback: If DB failed or is null, load bookings from LocalStorage
-      if (!dbLoaded) {
+      } catch (error: any) {
+          console.error("DB Init Failed:", error);
+          setDbError(error.message || "Erreur de connexion DB");
+          setIsDbConnected(false);
+          loadLocalFallback();
+      }
+  };
+
+  const loadLocalFallback = () => {
+    try {
         const localBookings = localStorage.getItem('daryl_bookings');
         if (localBookings) {
-          try { 
-              const parsed = JSON.parse(localBookings);
-              if (Array.isArray(parsed)) setBookings(parsed); 
-          } catch (e) {}
+            const parsed = JSON.parse(localBookings);
+            if (Array.isArray(parsed)) setBookings(parsed); 
         }
-      }
+        const storedBlocked = localStorage.getItem('daryl_blocked_slots');
+        if (storedBlocked) {
+            const parsed = JSON.parse(storedBlocked);
+            if (Array.isArray(parsed)) setBlockedSlots(new Set(parsed));
+        }
+        const storedAffiliates = localStorage.getItem('daryl_affiliates');
+        if (storedAffiliates) {
+            const parsed = JSON.parse(storedAffiliates);
+            if (parsed && typeof parsed === 'object') setAffiliateCodes(parsed);
+        }
+    } catch (e) {}
+  };
 
-      setIsInitialized(true);
-    };
-
-    initData();
+  // 1. Trigger Init on Mount
+  useEffect(() => {
+    initializeDb().then(() => setIsInitialized(true));
   }, []);
 
   // 2. Generate Schedules
@@ -216,7 +285,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setSchedules(nextDays);
   }, [blockedSlots, isInitialized]);
 
-  // 3. Persist Data (Local Backup always runs)
+  // 3. Persist Data Local Backup
   useEffect(() => {
     if (!isInitialized) return;
     localStorage.setItem('daryl_bookings', JSON.stringify(bookings));
@@ -228,7 +297,7 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
   // --- Actions ---
 
   const addBooking = async (booking: ClientBooking) => {
-    // Save usedReferralCode in the client blob for backup
+    // Optimistic UI Update
     const bookingToSave = {
         ...booking,
         client: {
@@ -237,11 +306,9 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             referralClaimed: false
         }
     };
-
-    // Optimistic Update (Immediate UI response)
     setBookings(prev => [...prev, bookingToSave]);
 
-    if (sql) {
+    if (sql && isDbConnected) {
       try {
         await sql`
           INSERT INTO bookings (id, date, slot_id, time, service, client, status, used_referral_code, referral_claimed)
@@ -257,35 +324,53 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ${false}
           )
         `;
-      } catch (e) { console.error("SQL Error AddBooking:", e); }
+      } catch (e: any) { 
+          console.error("SQL Error AddBooking:", e);
+          setDbError("Erreur sauvegarde réservation: " + e.message);
+          alert("Erreur réseau: La réservation n'a pas pu être sauvegardée sur le serveur. Vérifiez votre connexion.");
+          // Rollback state if desired, or let local persistence handle it temporarily
+      }
     }
   };
 
   const deleteBooking = async (bookingId: string) => {
     setBookings(prev => prev.filter(b => b.id !== bookingId));
-    if (sql) {
-      try { await sql`DELETE FROM bookings WHERE id = ${bookingId}`; } catch (e) { console.error(e); }
+    if (sql && isDbConnected) {
+      try { await sql`UPDATE bookings SET is_archived = TRUE WHERE id = ${bookingId}`; } 
+      catch (e: any) { setDbError("Erreur suppression: " + e.message); }
     }
   };
 
   const updateBookingStatus = async (bookingId: string, status: BookingStatus) => {
     setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, status } : b));
-    if (sql) {
-        try { await sql`UPDATE bookings SET status = ${status} WHERE id = ${bookingId}`; } catch (e) { console.error(e); }
+    if (sql && isDbConnected) {
+        try { await sql`UPDATE bookings SET status = ${status} WHERE id = ${bookingId}`; } 
+        catch (e: any) { setDbError("Erreur maj status: " + e.message); }
     }
   };
 
-  const toggleSlotAvailability = (date: string, slotId: string) => {
+  const toggleSlotAvailability = async (date: string, slotId: string) => {
     const key = `${date}_${slotId}`;
+    let action: 'block' | 'unblock' = 'block';
+
+    if (blockedSlots.has(key)) action = 'unblock';
+
     setBlockedSlots(prev => {
       const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
+      if (action === 'unblock') next.delete(key);
+      else next.add(key);
       return next;
     });
+
+    if (sql && isDbConnected) {
+        try {
+            if (action === 'block') {
+                 await sql`INSERT INTO blocked_slots (date, slot_id) VALUES (${date}, ${slotId}) ON CONFLICT DO NOTHING`;
+            } else {
+                 await sql`DELETE FROM blocked_slots WHERE date = ${date} AND slot_id = ${slotId}`;
+            }
+        } catch (e: any) { setDbError("Erreur blocage créneau: " + e.message); }
+    }
   };
 
   const getBookingsForDate = (date: string) => {
@@ -308,28 +393,17 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const cleanPhone = phone.replace(/\D/g, '');
       const cleanCode = code.toUpperCase().trim();
 
-      // Check if code exists locally first
       if (affiliateCodes[cleanCode] && affiliateCodes[cleanCode] !== cleanPhone) {
-          return false; // Code taken
+          return false; 
       }
 
-      // Optimistic Update
-      setAffiliateCodes(prev => ({
-          ...prev,
-          [cleanCode]: cleanPhone
-      }));
+      setAffiliateCodes(prev => ({ ...prev, [cleanCode]: cleanPhone }));
 
-      // DB Insert
-      if (sql) {
+      if (sql && isDbConnected) {
           try {
               await sql`INSERT INTO affiliates (phone, code) VALUES (${cleanPhone}, ${cleanCode})`;
-          } catch (e) {
-              console.error("SQL Error RegisterAffiliate:", e);
-              // Rollback optimistic update if needed, but for now we rely on DB constraints
-              return false;
-          }
+          } catch (e) { return false; }
       }
-      
       return true;
   };
 
@@ -342,34 +416,19 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const cleanPhone = (p: string) => p.replace(/\D/g, '');
       const targetPhone = cleanPhone(phone);
       
-      // 1. Find the code owned by this user
       const myCode = getAffiliateCode(targetPhone);
-
       if (!myCode) return { count: 0, creditAmount: 0, code: null };
 
-      // 2. Find bookings that USED this code
       const eligibleReferrals = bookings.filter(b => {
           const usedCode = b.usedReferralCode || (b.client as any).usedReferralCode;
           const isClaimed = b.referralClaimed || (b.client as any).referralClaimed;
-          
-          if (!usedCode) return false;
-          
-          return (
-              usedCode === myCode && // Used MY code
-              b.status === 'confirmed' && // Booking completed
-              !isClaimed // Not yet redeemed
-          );
+          return (usedCode === myCode && b.status === 'confirmed' && !isClaimed);
       });
 
       const count = eligibleReferrals.length;
-      // UPDATE: 3 EUR per referral instead of percentage
       const creditAmount = count * 3; 
 
-      return {
-          count,
-          creditAmount,
-          code: myCode
-      };
+      return { count, creditAmount, code: myCode };
   };
 
   const applyLoyaltyFreeCut = async (bookingId: string) => {
@@ -384,11 +443,9 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       setBookings(prev => prev.map(b => b.id === bookingId ? { ...b, service: updatedService } : b));
 
-      if (sql) {
-          try {
-             // Update JSON stored as text
-             await sql`UPDATE bookings SET service = ${JSON.stringify(updatedService)} WHERE id = ${bookingId}`;
-          } catch(e) { console.error("SQL Error ApplyLoyalty:", e); }
+      if (sql && isDbConnected) {
+          try { await sql`UPDATE bookings SET service = ${JSON.stringify(updatedService)} WHERE id = ${bookingId}`; }
+          catch(e) {}
       }
   };
 
@@ -396,88 +453,47 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const cleanPhone = (p: string) => p.replace(/\D/g, '');
       const targetPhone = cleanPhone(phone);
       
-      // 1. Identify current booking to update (The one getting the discount)
       const targetBooking = bookings.find(b => b.id === targetBookingId);
       if (!targetBooking) return;
 
       const myCode = getAffiliateCode(targetPhone);
       if (!myCode) return;
 
-      // 2. Identify Referral IDs to burn (The sources of the discount)
       const availableReferrals = bookings.filter(b => {
           const usedCode = b.usedReferralCode || (b.client as any).usedReferralCode;
           const isClaimed = b.referralClaimed || (b.client as any).referralClaimed;
-          return (
-              usedCode === myCode &&
-              b.status === 'confirmed' && 
-              !isClaimed
-          );
+          return (usedCode === myCode && b.status === 'confirmed' && !isClaimed);
       });
 
       if (availableReferrals.length === 0) return;
 
-      // UPDATE LOGIC: Burn just enough referrals to cover price, or all of them if not enough
       const currentPrice = parseInt(targetBooking.service.price.replace(/[^0-9]/g, '')) || 0;
-      
-      // Cost of referral point = 3 EUR
       const referralValue = 3;
-      
-      // Calculate how many referrals are needed to cover the price
       const referralsNeeded = Math.ceil(currentPrice / referralValue);
-      
-      // Burn max available or needed
       const referralsToBurn = availableReferrals.slice(0, referralsNeeded);
-      
       const discountAmount = referralsToBurn.length * referralValue;
       
-      // Calculate new price
       const newPriceValue = Math.max(0, currentPrice - discountAmount);
       const newPriceString = `${newPriceValue.toFixed(0)} €`;
       const suffix = newPriceValue === 0 ? '(OFFERT PARRAIN)' : `(-${discountAmount}€)`;
 
-      // 3. Update State
       setBookings(prev => prev.map(b => {
-          // If this is one of the referral sources, mark as claimed
           if (referralsToBurn.find(upd => upd.id === b.id)) {
-              return { 
-                  ...b, 
-                  referralClaimed: true,
-                  client: { ...b.client, referralClaimed: true } as any
-              };
+              return { ...b, referralClaimed: true, client: { ...b.client, referralClaimed: true } as any };
           }
-          // If this is the booking receiving the discount, update service price
           if (b.id === targetBookingId) {
-             return {
-                 ...b,
-                 service: {
-                     ...b.service,
-                     name: `${b.service.name} ${suffix}`,
-                     price: newPriceString
-                 }
-             }
+             return { ...b, service: { ...b.service, name: `${b.service.name} ${suffix}`, price: newPriceString } }
           }
           return b;
       }));
 
-      // 4. Update DB
-      if (sql) {
-          // Burn points
+      if (sql && isDbConnected) {
           for (const b of referralsToBurn) {
                const updatedClient = { ...b.client, referralClaimed: true };
-               try {
-                   // Update both column and JSON for safety
-                   await sql`UPDATE bookings SET referral_claimed = TRUE, client = ${JSON.stringify(updatedClient)} WHERE id = ${b.id}`;
-               } catch(e) { console.error("SQL Error BurnReferral:", e); }
+               try { await sql`UPDATE bookings SET referral_claimed = TRUE, client = ${JSON.stringify(updatedClient)} WHERE id = ${b.id}`; } catch(e) {}
           }
-          // Apply discount to target booking
-          const updatedService = { 
-              ...targetBooking.service, 
-              name: `${targetBooking.service.name} ${suffix}`,
-              price: newPriceString
-          };
-          try {
-             await sql`UPDATE bookings SET service = ${JSON.stringify(updatedService)} WHERE id = ${targetBookingId}`;
-          } catch(e) { console.error("SQL Error ApplyDiscount:", e); }
+          const updatedService = { ...targetBooking.service, name: `${targetBooking.service.name} ${suffix}`, price: newPriceString };
+          try { await sql`UPDATE bookings SET service = ${JSON.stringify(updatedService)} WHERE id = ${targetBookingId}`; } catch(e) {}
       }
   };
 
@@ -528,7 +544,10 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       applyLoyaltyFreeCut,
       registerAffiliateCode,
       getAffiliateCode,
-      isDbConnected
+      isDbConnected,
+      dbError,
+      initializeDb,
+      refreshData: loadDataFromDb
     }}>
       {children}
     </BookingContext.Provider>

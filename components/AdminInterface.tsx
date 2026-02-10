@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useBooking } from '../BookingContext';
 import { 
   X, Lock, Settings, Power, Phone, CheckCircle, XCircle, 
-  Activity, Trash2, UserPlus, Ban, Search, Gift, Zap, Calendar, Star, Wifi, WifiOff, Database
+  Activity, Trash2, UserPlus, Ban, Search, Gift, Zap, Calendar, Star, Wifi, WifiOff, Database, RefreshCw, AlertCircle, Copy, ExternalLink, HelpCircle
 } from 'lucide-react';
 import { ClientBooking } from '../types';
 
@@ -26,7 +26,10 @@ export const AdminInterface = () => {
     redeemReferralRewards,
     applyLoyaltyFreeCut,
     getClientVisitCount,
-    isDbConnected
+    isDbConnected,
+    dbError,
+    initializeDb,
+    refreshData
   } = useBooking();
 
   const [pin, setPin] = useState('');
@@ -43,6 +46,11 @@ export const AdminInterface = () => {
   // DB Config State
   const [showDbConfig, setShowDbConfig] = useState(false);
   const [dbUrlInput, setDbUrlInput] = useState('');
+  const [isInitLoading, setIsInitLoading] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+  
+  // Refresh loading state for animation
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Loyalty Lookup State
   const [scanPhone, setScanPhone] = useState('');
@@ -50,8 +58,12 @@ export const AdminInterface = () => {
   const [scanVisits, setScanVisits] = useState<number>(0);
   const [clientBookings, setClientBookings] = useState<ClientBooking[]>([]);
 
+  // Delete Confirmation State
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
   // Sync selected date with schedule
   const currentDateSchedule = schedules[selectedDateIndex] || { date: new Date().toISOString(), slots: [] };
+  const dayBookings = getBookingsForDate(currentDateSchedule.date);
   
   // Login Handler
   useEffect(() => {
@@ -71,25 +83,59 @@ export const AdminInterface = () => {
 
   // Load existing DB URL into input when config opens
   useEffect(() => {
+      // Auto-open config if we are offline or have an error
+      if ((!isDbConnected || dbError) && isAuthenticated) {
+          setShowDbConfig(true);
+      }
       if (showDbConfig) {
           setDbUrlInput(localStorage.getItem('daryl_db_url') || '');
+          setConfigError(null);
       }
-  }, [showDbConfig]);
+  }, [showDbConfig, isDbConnected, dbError, isAuthenticated]);
+
+  // Reset delete confirm when selection changes
+  useEffect(() => {
+    setDeleteConfirm(false);
+  }, [selectedBooking]);
 
   const handleKeypad = (num: string) => {
     if (pin.length < 4) setPin(prev => prev + num);
   };
+  
+  const handleRefresh = async () => {
+      setIsRefreshing(true);
+      await refreshData();
+      // Keep animation for a moment
+      setTimeout(() => setIsRefreshing(false), 800);
+  };
 
   const handleSaveDbUrl = () => {
-      if (dbUrlInput.trim()) {
-          localStorage.setItem('daryl_db_url', dbUrlInput.trim());
-          alert("Configuration sauvegardée. L'application va redémarrer.");
-          window.location.reload();
-      } else {
-          localStorage.removeItem('daryl_db_url');
-          alert("Configuration supprimée. Retour au mode hors ligne.");
-          window.location.reload();
+      const cleanUrl = dbUrlInput.trim();
+      
+      // Validation intelligente pour aider l'utilisateur
+      if (!cleanUrl) {
+           localStorage.removeItem('daryl_db_url');
+           alert("Configuration supprimée. Retour au mode hors ligne.");
+           window.location.reload();
+           return;
       }
+
+      // Si l'utilisateur met juste un mot de passe (pas de postgres://)
+      if (!cleanUrl.startsWith('postgres')) {
+          setConfigError("Erreur: Vous devez copier le lien 'Connection String' complet (postgres://...).");
+          return;
+      }
+      
+      localStorage.setItem('daryl_db_url', cleanUrl);
+      alert("Configuration sauvegardée ! Le site va redémarrer pour se connecter.");
+      window.location.reload();
+  };
+  
+  const handleForceInit = async () => {
+      setIsInitLoading(true);
+      await initializeDb();
+      setIsInitLoading(false);
+      alert(dbError ? "Échec : " + dbError : "Base de données connectée et prête !");
   };
 
   const handleStatusUpdate = (status: 'confirmed' | 'rejected') => {
@@ -110,12 +156,22 @@ export const AdminInterface = () => {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // First click: Ask for confirmation
+    if (!deleteConfirm) {
+        setDeleteConfirm(true);
+        // Reset after 3s if not confirmed
+        setTimeout(() => setDeleteConfirm(false), 3000);
+        return;
+    }
+
+    // Second click: Execute delete
     if (selectedBooking) {
-      if (window.confirm("Êtes-vous sûr de vouloir supprimer cette réservation ?")) {
         deleteBooking(selectedBooking.id);
         setSelectedBooking(null);
-      }
+        setDeleteConfirm(false);
     }
   };
 
@@ -205,47 +261,93 @@ export const AdminInterface = () => {
           {!showDbConfig && (
             <button 
                 onClick={() => setShowDbConfig(true)}
-                className="absolute -top-16 left-0 p-2 text-white/20 hover:text-white transition-colors"
+                className="absolute -top-16 left-0 p-2 text-white/20 hover:text-white transition-colors flex items-center gap-2 bg-white/5 rounded-lg border border-white/10"
                 title="Configurer Base de Données"
             >
                 <Settings className="w-5 h-5" />
+                <span className="text-[10px] uppercase font-bold">Réglages BDD</span>
+                {(!isDbConnected || dbError) && <AlertCircle className="w-4 h-4 text-red-500 animate-pulse ml-1" />}
             </button>
           )}
 
           <div className="mb-12 flex flex-col items-center">
-            <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-6 border border-white/10 relative">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 border relative transition-colors ${dbError ? 'bg-red-500/10 border-red-500/30' : 'bg-white/5 border-white/10'}`}>
               <Lock className="w-6 h-6 text-white" />
-              {isDbConnected && (
+              {isDbConnected ? (
                   <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-[#111]"></div>
+              ) : (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-[#111]"></div>
               )}
             </div>
             <h2 className="text-2xl font-space font-bold text-white mb-2">Accès Système</h2>
             <p className="text-white/40 text-sm font-mono">
                 {isDbConnected ? 'Système ONLINE' : 'Mode HORS LIGNE'}
             </p>
+            {dbError && (
+                <div className="mt-2 bg-red-500/10 p-2 rounded max-w-[280px] text-center border border-red-500/20">
+                    <p className="text-[10px] text-red-400 font-mono font-bold uppercase mb-1">Erreur de Connexion</p>
+                    <p className="text-[9px] text-red-300 font-mono break-all">{dbError}</p>
+                </div>
+            )}
           </div>
 
           {showDbConfig ? (
-               <div className="w-full bg-[#111] p-6 rounded-2xl border border-white/10 animate-fade-in mb-8">
+               <div className="w-full bg-[#111] p-6 rounded-2xl border border-white/10 animate-fade-in mb-8 shadow-2xl relative z-50">
                    <h3 className="text-white font-bold mb-4 flex items-center gap-2">
                        <Database className="w-4 h-4 text-apple-blue" />
-                       Connexion BDD
+                       Lier la Base de Données
                    </h3>
-                   <p className="text-[10px] text-white/50 mb-3">
-                       Collez votre lien de connexion Neon/Postgres ici (commence par <code>postgres://</code>)
-                   </p>
+                   
+                   {/* Instructions simplifiées Dashboard */}
+                   <div className="bg-white/5 p-4 rounded-xl border border-white/10 mb-4 text-sm space-y-3">
+                        <div className="flex gap-3">
+                            <span className="bg-apple-blue text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0">1</span>
+                            <div className="flex flex-col">
+                                <p className="text-white/80">
+                                    Sur Neon, cliquez sur <span className="font-bold text-white border border-white/20 px-1 rounded mx-1">Connect</span>.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <span className="bg-apple-blue text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0">2</span>
+                            <div className="flex flex-col">
+                                <p className="text-white/80">
+                                    Sélectionnez <strong className="text-apple-blue">Connection String</strong>.
+                                </p>
+                                <p className="text-[10px] text-white/40 mt-0.5">(Ne prenez pas "Passwordless")</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <span className="bg-apple-blue text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0">3</span>
+                            <p className="text-white/80">
+                                Copiez le lien <code className="text-apple-blue">postgres://...</code> et collez-le ci-dessous.
+                            </p>
+                        </div>
+                   </div>
+
                    <input 
                         type="text" 
                         value={dbUrlInput} 
-                        onChange={(e) => setDbUrlInput(e.target.value)}
-                        placeholder="postgres://user:pass@endpoint.neon.tech/neondb"
-                        className="w-full bg-black border border-white/20 rounded p-3 text-xs text-white font-mono mb-4 focus:border-apple-blue outline-none"
+                        onChange={(e) => {
+                             setDbUrlInput(e.target.value);
+                             setConfigError(null);
+                        }}
+                        placeholder="postgres://..."
+                        className={`w-full bg-black border ${configError ? 'border-red-500' : 'border-white/20'} rounded p-3 text-xs text-white font-mono mb-2 focus:border-apple-blue outline-none placeholder:text-white/20`}
                    />
+
+                   {configError && (
+                       <div className="flex items-center gap-2 mb-4 text-red-400">
+                           <AlertCircle className="w-4 h-4" />
+                           <p className="text-xs font-bold">{configError}</p>
+                       </div>
+                   )}
+
                    <div className="flex gap-2">
                        <button onClick={() => setShowDbConfig(false)} className="flex-1 py-3 bg-white/5 rounded hover:bg-white/10 text-white/60 text-xs font-bold uppercase">Annuler</button>
-                       <button onClick={handleSaveDbUrl} className="flex-1 py-3 bg-white text-black rounded hover:bg-gray-200 text-xs font-bold uppercase">Sauvegarder</button>
+                       <button onClick={handleSaveDbUrl} className="flex-1 py-3 bg-white text-black rounded hover:bg-gray-200 text-xs font-bold uppercase">Connecter</button>
                    </div>
-               </div>
+             </div>
           ) : (
             <>
                 <div className={`flex gap-6 mb-12 ${isShaking ? 'animate-[drift-fast_0.2s_ease-in-out]' : ''}`}>
@@ -286,8 +388,6 @@ export const AdminInterface = () => {
   }
 
   // -- DASHBOARD --
-  const dayBookings = getBookingsForDate(currentDateSchedule.date);
-  
   // Stats
   const totalBookings = bookings.filter(b => b.status === 'confirmed' || b.status === 'walk-in').length;
   const pendingBookings = bookings.filter(b => b.status === 'pending').length;
@@ -315,10 +415,21 @@ export const AdminInterface = () => {
                             <span className="text-[9px] text-green-500 font-bold tracking-wider">SYNC LIVE</span>
                         </div>
                     ) : (
-                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20">
+                        <button onClick={() => setShowDbConfig(true)} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors">
                             <WifiOff className="w-3 h-3 text-red-500" />
-                            <span className="text-[9px] text-red-500 font-bold tracking-wider">OFFLINE</span>
-                        </div>
+                            <span className="text-[9px] text-red-500 font-bold tracking-wider">OFFLINE - CONFIG</span>
+                        </button>
+                    )}
+                    
+                    {/* Manual Refresh Button */}
+                    {isDbConnected && (
+                         <button 
+                             onClick={handleRefresh} 
+                             className={`p-1.5 rounded-full hover:bg-white/10 transition-colors ${isRefreshing ? 'animate-spin' : ''}`}
+                             title="Forcer la synchronisation"
+                        >
+                             <RefreshCw className="w-3 h-3 text-white/60" />
+                         </button>
                     )}
                 </div>
             </div>
@@ -333,10 +444,73 @@ export const AdminInterface = () => {
 
       {/* Warning Banner if Offline */}
       {!isDbConnected && (
-        <div className="bg-red-500/10 border-b border-red-500/10 px-6 py-2">
-            <p className="text-[10px] text-red-400 text-center font-mono">
-                ⚠️ Aucune base de données. Les données sont locales à cet appareil.
+        <div className="bg-red-500/10 border-b border-red-500/10 px-6 py-2 flex items-center justify-center gap-2 cursor-pointer hover:bg-red-500/20 transition-colors" onClick={() => setShowDbConfig(true)}>
+            <AlertCircle className="w-3 h-3 text-red-500" />
+            <p className="text-[10px] text-red-400 text-center font-mono underline decoration-red-500/30">
+                {dbError ? (dbError.includes('password') ? "Mot de passe incorrect : Cliquez pour corriger" : "Erreur connexion : Cliquez pour configurer") : "⚠️ Mode Hors Ligne - Cliquez pour connecter le projet 'daryl'"}
             </p>
+        </div>
+      )}
+
+      {/* Manual Config Modal Overlay inside Dashboard (if accessed via header button) */}
+      {showDbConfig && (
+        <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
+             <div className="w-full max-w-sm bg-[#111] p-6 rounded-2xl border border-white/10 animate-fade-in shadow-2xl">
+                   <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+                       <Database className="w-4 h-4 text-apple-blue" />
+                       Lier la Base de Données
+                   </h3>
+                   
+                    {/* Instructions simplifiées Dashboard */}
+                   <div className="bg-white/5 p-4 rounded-xl border border-white/10 mb-4 text-sm space-y-3">
+                        <div className="flex gap-3">
+                            <span className="bg-apple-blue text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0">1</span>
+                            <div className="flex flex-col">
+                                <p className="text-white/80">
+                                    Sur Neon, cliquez sur <span className="font-bold text-white border border-white/20 px-1 rounded mx-1">Connect</span>.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <span className="bg-apple-blue text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0">2</span>
+                            <div className="flex flex-col">
+                                <p className="text-white/80">
+                                    Sélectionnez <strong className="text-apple-blue">Connection String</strong>.
+                                </p>
+                                <p className="text-[10px] text-white/40 mt-0.5">(Ne prenez pas "Passwordless")</p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <span className="bg-apple-blue text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0">3</span>
+                            <p className="text-white/80">
+                                Copiez le lien <code className="text-apple-blue">postgres://...</code> et collez-le ci-dessous.
+                            </p>
+                        </div>
+                   </div>
+
+                   <input 
+                        type="text" 
+                        value={dbUrlInput} 
+                        onChange={(e) => {
+                             setDbUrlInput(e.target.value);
+                             setConfigError(null);
+                        }}
+                        placeholder="postgres://..."
+                        className={`w-full bg-black border ${configError ? 'border-red-500' : 'border-white/20'} rounded p-3 text-xs text-white font-mono mb-2 focus:border-apple-blue outline-none placeholder:text-white/20`}
+                   />
+
+                   {configError && (
+                       <div className="flex items-center gap-2 mb-4 text-red-400">
+                           <AlertCircle className="w-4 h-4" />
+                           <p className="text-xs font-bold">{configError}</p>
+                       </div>
+                   )}
+
+                   <div className="flex gap-2">
+                       <button onClick={() => setShowDbConfig(false)} className="flex-1 py-3 bg-white/5 rounded hover:bg-white/10 text-white/60 text-xs font-bold uppercase">Annuler</button>
+                       <button onClick={handleSaveDbUrl} className="flex-1 py-3 bg-white text-black rounded hover:bg-gray-200 text-xs font-bold uppercase">Connecter</button>
+                   </div>
+             </div>
         </div>
       )}
 
@@ -519,34 +693,6 @@ export const AdminInterface = () => {
             </div>
         )}
 
-        {view === 'stats' && (
-            <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2 bg-[#111] p-6 rounded-2xl border border-white/5">
-                    <div className="flex items-start justify-between mb-4">
-                        <div>
-                            <span className="text-xs text-white/40 font-mono uppercase tracking-widest">Revenu</span>
-                            <h3 className="text-3xl font-space font-bold text-white mt-1">€{estimatedRevenue}</h3>
-                        </div>
-                        <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center">
-                            <Activity className="w-5 h-5 text-green-500" />
-                        </div>
-                    </div>
-                    <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
-                        <div className="bg-green-500 h-full w-[70%]"></div>
-                    </div>
-                </div>
-
-                <div className="bg-[#111] p-5 rounded-2xl border border-white/5">
-                     <span className="text-[10px] text-white/40 font-mono uppercase tracking-widest block mb-2">Réservations</span>
-                     <h3 className="text-2xl font-space font-bold text-white">{totalBookings}</h3>
-                </div>
-                <div className="bg-[#111] p-5 rounded-2xl border border-white/5">
-                     <span className="text-[10px] text-white/40 font-mono uppercase tracking-widest block mb-2">En Attente</span>
-                     <h3 className="text-2xl font-space font-bold text-orange-500">{pendingBookings}</h3>
-                </div>
-            </div>
-        )}
-
         {view === 'schedule' && (
             <div className="space-y-2">
                 {currentDateSchedule.slots.map((slot) => {
@@ -701,9 +847,23 @@ export const AdminInterface = () => {
                         
                         <button 
                             onClick={handleDelete}
-                            className="text-red-500 hover:text-red-400 p-2 flex items-center gap-2 text-xs uppercase tracking-wider"
+                            className={`p-2 flex items-center gap-2 text-xs uppercase tracking-wider transition-colors rounded ${
+                                deleteConfirm 
+                                ? 'bg-red-500 text-white hover:bg-red-600 animate-pulse' 
+                                : 'text-red-500 hover:text-red-400'
+                            }`}
                         >
-                            <Trash2 className="w-4 h-4" /> Supprimer
+                            {deleteConfirm ? (
+                                <>
+                                    <Trash2 className="w-4 h-4 fill-current" />
+                                    Confirmer ?
+                                </>
+                            ) : (
+                                <>
+                                    <Trash2 className="w-4 h-4" />
+                                    Supprimer
+                                </>
+                            )}
                         </button>
                     </div>
 

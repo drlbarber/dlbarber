@@ -1,11 +1,12 @@
+
 import React, { useState, useEffect } from 'react';
 import { useBooking } from '../BookingContext';
 import { ServiceItem, BookingForm } from '../types';
-import { Star, ChevronLeft, Tag, Clock, MessageSquare } from 'lucide-react';
+import { Star, ChevronLeft, Tag, Clock, MessageSquare, Calendar, CheckCircle } from 'lucide-react';
 
 const SERVICES_DATA: ServiceItem[] = [
-  { id: 'cut', name: 'Coupe', duration: '', price: '15 €', note: 'FORME + CONTOURS' },
-  { id: 'full', name: 'Coupe + Barbe', duration: '', price: '20 €', note: 'SOIN COMPLET' },
+  { id: 'cut', name: 'Coupe', duration: '', price: '15 €', note: 'Structure & Finitions' },
+  { id: 'full', name: 'Coupe + Barbe', duration: '', price: '20 €', note: 'Expérience Complète' },
 ];
 
 export const Booking = () => {
@@ -16,7 +17,7 @@ export const Booking = () => {
   const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
   const [selectedDateIndex, setSelectedDateIndex] = useState<number>(0);
   
-  // Time Selection State split into Hour and specific Slot
+  // Time Selection State
   const [selectedHour, setSelectedHour] = useState<string | null>(null); 
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   
@@ -29,7 +30,6 @@ export const Booking = () => {
   const [referralCode, setReferralCode] = useState('');
   const [visitCount, setVisitCount] = useState(0);
 
-  // Capture Referral Link on Mount
   useEffect(() => {
       const params = new URLSearchParams(window.location.search);
       const refCode = params.get('ref');
@@ -44,35 +44,27 @@ export const Booking = () => {
   const dayBookings = currentSchedule ? getBookingsForDate(currentSchedule.date) : [];
   
   const isSlotTaken = (time: string) => dayBookings.some(b => b.time === time);
-
-  // Filter unique hours for the first view of Step 2
   const uniqueHours = Array.from(new Set(allSlots.map(s => s.time.split(':')[0])));
 
-  // -- Check for Self-Referral --
-  // We check if the user entered code matches the code associated with their own phone number
   const myOwnCode = guestForm.phone.length > 9 ? getAffiliateCode(guestForm.phone) : null;
   const isSelfReferral = myOwnCode && referralCode === myOwnCode;
-
 
   // -- Handlers --
   const handleNext = () => {
     if (currentStep < 3) {
       setCurrentStep(prev => prev + 1);
     } else if (currentStep === 3) {
-      // Extra validation for step 3
       if (isSelfReferral) return;
       handleConfirmBooking();
     }
   };
 
   const handleBack = () => {
-    // Special handling for Step 2 sub-navigation (Minutes -> Hours)
     if (currentStep === 2 && selectedHour) {
         setSelectedHour(null);
         setSelectedSlotId(null);
         return;
     }
-
     if (currentStep > 1) {
       setCurrentStep(prev => prev - 1);
     }
@@ -84,7 +76,6 @@ export const Booking = () => {
     const slot = allSlots.find(s => s.id === selectedSlotId);
     if (!slot) return;
 
-    // Add booking
     addBooking({
       id: Math.random().toString(36).substr(2, 9),
       date: currentSchedule.date,
@@ -96,22 +87,18 @@ export const Booking = () => {
       usedReferralCode: referralCode.length === 4 ? referralCode.toUpperCase() : undefined
     });
 
-    // --- TRIGGER SMS TO DARYL ---
     const d = getFormattedDate(currentSchedule.date);
     const smsBody = `Nouvelle réservation :\n${guestForm.firstName} ${guestForm.lastName}\n${d.weekday} ${d.day} ${d.month} à ${slot.time}\nService: ${selectedService.name}\nTél: ${guestForm.phone}`;
     
-    // Open SMS app with Daryl's number
     window.open(`sms:0611584979?&body=${encodeURIComponent(smsBody)}`, '_self');
-    // ----------------------------
 
     setTimeout(() => {
         const count = getClientVisitCount(guestForm.phone);
         setVisitCount(count);
-        setCurrentStep(4); // Success State
+        setCurrentStep(4);
     }, 100);
   };
 
-  // -- Validation --
   const isStepValid = () => {
     if (currentStep === 1) return !!selectedService;
     if (currentStep === 2) return !!selectedSlotId;
@@ -126,587 +113,331 @@ export const Booking = () => {
   const isFreeCut = visitCount > 0 && visitCount % 8 === 0;
   const visitsTowardGoal = visitCount % 8 === 0 ? 8 : visitCount % 8;
 
-  // -- Styles (Scoped) --
   const styles = `
-    .carbon-wrapper {
-        --carbon-deep: #0a0a0a;
-        --carbon-light: #161616;
-        --blade-silver: #e0e0e0;
-        --blade-dim: #444444;
-        --accent-glow: #ffffff;
-        --shear-angle: polygon(0% 0%, 100% 0%, 96% 100%, 0% 100%);
-        --transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
-        font-family: 'Host Grotesk', sans-serif;
-        color: var(--blade-silver);
-        position: relative;
-        width: 100%;
+    .apple-glass {
+        background: rgba(30, 30, 30, 0.6);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
-    .carbon-overlay {
-        position: absolute;
-        inset: 0;
-        background-image: 
-            linear-gradient(45deg, rgba(255,255,255,0.02) 25%, transparent 25%), 
-            linear-gradient(-45deg, rgba(255,255,255,0.02) 25%, transparent 25%), 
-            linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.02) 75%), 
-            linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.02) 75%);
-        background-size: 4px 4px;
-        pointer-events: none;
-        z-index: 0;
-        opacity: 0.5;
-    }
-
-    .booking-container {
-        width: 100%;
-        max-width: 450px;
-        margin: 0 auto;
-        padding: 40px 24px;
-        position: relative;
-        z-index: 20;
-    }
-
-    .header-title {
-        font-size: 3rem;
-        font-weight: 800;
-        letter-spacing: -2px;
-        line-height: 0.9;
-        text-transform: uppercase;
-        font-style: italic;
-        background: linear-gradient(180deg, #fff 0%, #444 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 20px;
-    }
-
-    .progress-bar {
-        height: 2px;
-        background: var(--blade-dim);
-        margin-top: 15px;
-        width: 100%;
-        position: relative;
-    }
-
-    .progress-fill {
-        height: 100%;
-        background: var(--blade-silver);
-        transition: var(--transition);
-        box-shadow: 0 0 15px var(--accent-glow);
-    }
-
-    .step-label {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.7rem;
-        text-transform: uppercase;
-        letter-spacing: 2px;
-        color: var(--blade-dim);
-        margin-bottom: 20px;
-        display: block;
-    }
-
-    .option-card {
-        background: var(--carbon-light);
-        border: 1px solid #222;
-        padding: 20px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        cursor: pointer;
-        transition: var(--transition);
-        clip-path: var(--shear-angle);
-        position: relative;
-        overflow: hidden;
-        margin-bottom: 12px;
-    }
-
-    .option-card:hover {
-        background: #1a1a1a;
-    }
-
-    .option-card.selected {
-        background: var(--blade-silver);
-        color: var(--carbon-deep);
-        transform: translateX(10px);
+    .apple-card {
+        background: #1c1c1e;
+        border-radius: 18px;
+        transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+        border: 1px solid rgba(255, 255, 255, 0.05);
     }
     
-    .option-card.selected .style-info p, 
-    .option-card.selected .price {
-        color: var(--carbon-deep);
-        opacity: 1;
+    .apple-card:active {
+        transform: scale(0.98);
     }
 
-    .style-info h3 {
-        font-size: 1.2rem;
-        font-weight: 500;
-        margin-bottom: 4px;
+    .apple-card.selected {
+        border-color: #0071e3;
+        background: rgba(0, 113, 227, 0.15);
+        box-shadow: 0 0 0 1px #0071e3;
     }
 
-    .style-info p {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.7rem;
-        opacity: 0.6;
-        text-transform: uppercase;
-    }
-
-    .price {
-        font-family: 'JetBrains Mono', monospace;
-        font-weight: 700;
-        font-size: 1rem;
-    }
-
-    .date-strip {
-        display: flex;
-        gap: 10px;
-        overflow-x: auto;
-        padding-bottom: 15px;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
-    .date-strip::-webkit-scrollbar { display: none; }
-
-    .date-pill {
-        min-width: 60px;
-        height: 80px;
-        background: var(--carbon-light);
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        border: 1px solid #222;
-        transition: var(--transition);
-        cursor: pointer;
-    }
-
-    .date-pill.selected {
-        background: var(--blade-silver);
-        color: var(--carbon-deep);
-    }
-
-    .time-grid {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 10px;
-        margin-top: 20px;
-    }
-
-    .time-slot {
-        padding: 15px;
-        background: var(--carbon-light);
-        text-align: center;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.8rem;
-        border: 1px solid #222;
-        cursor: pointer;
-        transition: var(--transition);
-    }
-    
-    .time-slot:hover {
-        border-color: #444;
-    }
-
-    .time-slot.selected {
-        background: var(--blade-silver);
-        color: var(--carbon-deep);
-    }
-
-    .time-slot.disabled {
-        opacity: 0.2;
-        cursor: not-allowed;
-        text-decoration: line-through;
-    }
-
-    .input-group {
-        position: relative;
-        margin-top: 20px;
-    }
-
-    .input-group input {
-        width: 100%;
+    .apple-input {
         background: transparent;
         border: none;
-        border-bottom: 2px solid var(--blade-dim);
-        padding: 15px 0;
-        color: white;
-        font-size: 1.5rem;
-        font-family: 'Host Grotesk', sans-serif;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        transition: border-color 0.3s ease;
+        border-radius: 0;
+    }
+    
+    .apple-input:focus {
+        border-color: #0071e3;
         outline: none;
-        transition: var(--transition);
     }
 
-    .input-group input:focus {
-        border-bottom-color: var(--blade-silver);
-    }
-
-    .input-group label {
-        position: absolute;
-        top: 15px;
-        left: 0;
-        color: var(--blade-dim);
-        transition: var(--transition);
-        pointer-events: none;
-        text-transform: uppercase;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.8rem;
-    }
-
-    .input-group input:focus ~ label,
-    .input-group input:not(:placeholder-shown) ~ label {
-        top: -15px;
-        font-size: 0.6rem;
-        color: var(--blade-silver);
-    }
-
-    .btn {
-        flex: 1;
-        padding: 20px;
-        border: none;
-        font-family: 'JetBrains Mono', monospace;
-        font-weight: 700;
-        text-transform: uppercase;
-        cursor: pointer;
-        transition: var(--transition);
-        clip-path: var(--shear-angle);
-        width: 100%;
-    }
-
-    .btn-primary {
-        background: var(--blade-silver);
-        color: var(--carbon-deep);
-    }
-
-    .btn-secondary {
-        background: transparent;
-        border: 1px solid var(--blade-dim);
-        color: var(--blade-silver);
+    .apple-btn {
+        background: #0071e3;
+        color: white;
+        border-radius: 9999px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        transition: all 0.3s ease;
     }
     
-    .btn-secondary:hover {
-        border-color: var(--blade-silver);
+    .apple-btn:hover:not(:disabled) {
+        background: #0077ed;
+        box-shadow: 0 4px 12px rgba(0, 113, 227, 0.3);
     }
-
-    .btn:disabled {
-        opacity: 0.3;
+    
+    .apple-btn:disabled {
+        background: #3a3a3c;
+        color: rgba(255, 255, 255, 0.3);
         cursor: not-allowed;
     }
-    
-    .loyalty-card {
-        background: linear-gradient(135deg, #1a1a1a 0%, #000000 100%);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 16px;
-        padding: 20px;
-        margin-top: 30px;
-        position: relative;
-        overflow: hidden;
+
+    .apple-btn-secondary {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border-radius: 9999px;
+        font-weight: 500;
+    }
+
+    /* Scrollbar invisible but functional */
+    .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+    }
+    .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
     }
     
-    .loyalty-dots {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 15px;
-    }
-    
-    .dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: #333;
-        transition: all 0.5s ease;
-    }
-    
-    .dot.filled {
-        background: #fff;
-        box-shadow: 0 0 10px rgba(255,255,255,0.5);
-    }
-    
-    .dot.free-cut {
-        background: #0071e3;
-        box-shadow: 0 0 15px #0071e3;
-        transform: scale(1.3);
-    }
-    
-    /* Animations */
-    @keyframes slideIn {
+    @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
     }
     
-    .animate-step {
-        animation: slideIn 0.5s ease forwards;
+    .animate-enter {
+        animation: fadeIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
     }
   `;
 
   return (
-    <section id="booking" className="bg-[#0a0a0a] relative min-h-screen flex items-center justify-center">
+    <section id="booking" className="bg-black relative min-h-screen flex items-center justify-center py-20 px-4">
       <style>{styles}</style>
       
-      <div className="carbon-wrapper">
-        <div className="carbon-overlay"></div>
+      <div className="w-full max-w-[460px] mx-auto relative z-10">
+        
+        {/* Header */}
+        <div className="text-center mb-10">
+          <h2 className="text-4xl font-semibold tracking-tight text-white mb-2">Réservation.</h2>
+          <p className="text-white/40 text-sm font-medium">L'excellence, simplement.</p>
+        </div>
 
-        <div className="booking-container">
-          {/* Header */}
-          <div className="mb-10">
-            <h1 className="header-title">Service de<br/>Précision</h1>
-            <div className="progress-bar">
-              <div 
-                className="progress-fill" 
-                style={{ width: `${(currentStep / 3) * 100}%` }}
-              ></div>
+        {/* STEP 1: SERVICE */}
+        {currentStep === 1 && (
+          <div className="animate-enter space-y-4">
+            <div className="flex justify-between items-center mb-4 px-1">
+                <span className="text-xs font-semibold text-white/40 uppercase tracking-wide">01. Service</span>
+            </div>
+            {SERVICES_DATA.map((service) => (
+                <div 
+                    key={service.id}
+                    className={`apple-card p-5 cursor-pointer flex justify-between items-center ${selectedService?.id === service.id ? 'selected' : 'hover:bg-[#2c2c2e]'}`}
+                    onClick={() => setSelectedService(service)}
+                >
+                    <div>
+                        <h3 className="text-lg font-medium text-white mb-1">{service.name}</h3>
+                        <p className="text-xs text-white/50">{service.note}</p>
+                    </div>
+                    <div className="text-white font-medium bg-white/10 px-3 py-1 rounded-full text-sm">
+                        {service.price}
+                    </div>
+                </div>
+            ))}
+          </div>
+        )}
+
+        {/* STEP 2: DATE & TIME */}
+        {currentStep === 2 && (
+          <div className="animate-enter">
+             <div className="flex justify-between items-center mb-4 px-1">
+                <span className="text-xs font-semibold text-white/40 uppercase tracking-wide">02. Disponibilité</span>
+            </div>
+            
+            {/* Date Strip */}
+            <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-4 mb-4">
+              {schedules.map((schedule, index) => {
+                  const d = getFormattedDate(schedule.date);
+                  const isSelected = selectedDateIndex === index;
+                  return (
+                      <div 
+                          key={schedule.date}
+                          className={`min-w-[70px] h-[85px] rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all border ${isSelected ? 'bg-white text-black border-white' : 'bg-[#1c1c1e] text-white/60 border-transparent hover:bg-[#2c2c2e]'}`}
+                          onClick={() => {
+                              setSelectedDateIndex(index);
+                              setSelectedHour(null);
+                              setSelectedSlotId(null);
+                          }}
+                      >
+                          <span className="text-[10px] uppercase font-bold tracking-wider mb-1 opacity-60">{d.weekday}</span>
+                          <span className="text-xl font-bold">{d.day}</span>
+                          <span className="text-[10px] opacity-40 mt-1">{d.month}</span>
+                      </div>
+                  );
+              })}
+            </div>
+
+            {/* Level 1: HOURS */}
+            {!selectedHour && (
+                <div className="animate-enter">
+                    <p className="text-center text-white/30 text-xs mb-4 font-medium">Sélectionnez une heure</p>
+                    <div className="grid grid-cols-4 gap-3">
+                      {allSlots.length === 0 ? (
+                          <div className="col-span-4 text-center py-10 text-white/30 text-sm">Aucun créneau ce jour</div>
+                      ) : (
+                          uniqueHours.map((hour) => {
+                              const hasAvailability = allSlots.some(s => s.time.startsWith(hour) && s.isAvailable && !isSlotTaken(s.time));
+                              return (
+                                  <button 
+                                      key={hour}
+                                      disabled={!hasAvailability}
+                                      onClick={() => hasAvailability && setSelectedHour(hour)}
+                                      className={`py-3 rounded-xl text-sm font-medium transition-all ${
+                                          hasAvailability 
+                                          ? 'bg-[#1c1c1e] text-white hover:bg-[#2c2c2e] hover:scale-105' 
+                                          : 'bg-[#1c1c1e]/30 text-white/10 cursor-not-allowed'
+                                      }`}
+                                  >
+                                      {hour}h
+                                  </button>
+                              );
+                          })
+                      )}
+                    </div>
+                </div>
+            )}
+
+            {/* Level 2: MINUTES */}
+            {selectedHour && (
+                <div className="animate-enter">
+                    <div className="flex items-center justify-between mb-6">
+                        <button 
+                            onClick={() => { setSelectedHour(null); setSelectedSlotId(null); }}
+                            className="flex items-center text-apple-blue text-sm font-medium hover:opacity-80 transition-opacity"
+                        >
+                            <ChevronLeft className="w-4 h-4 mr-1" /> Retour
+                        </button>
+                        <span className="text-white font-bold text-lg">{selectedHour}h</span>
+                        <div className="w-10"></div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3">
+                        {allSlots
+                          .filter(s => s.time.startsWith(selectedHour))
+                          .map((slot) => {
+                            const isTaken = !slot.isAvailable || isSlotTaken(slot.time);
+                            return (
+                                <button 
+                                    key={slot.id}
+                                    disabled={isTaken}
+                                    className={`py-4 rounded-xl text-sm font-medium border transition-all ${
+                                        selectedSlotId === slot.id 
+                                        ? 'bg-apple-blue border-apple-blue text-white shadow-lg' 
+                                        : isTaken 
+                                            ? 'bg-[#1c1c1e]/30 border-transparent text-white/10 cursor-not-allowed' 
+                                            : 'bg-[#1c1c1e] border-transparent text-white hover:bg-[#2c2c2e]'
+                                    }`}
+                                    onClick={() => !isTaken && setSelectedSlotId(slot.id)}
+                                >
+                                    {slot.time}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+          </div>
+        )}
+
+        {/* STEP 3: INFO */}
+        {currentStep === 3 && (
+          <div className="animate-enter space-y-6">
+             <div className="flex justify-between items-center mb-4 px-1">
+                <span className="text-xs font-semibold text-white/40 uppercase tracking-wide">03. Coordonnées</span>
+            </div>
+
+            <div className="space-y-5">
+                <div className="group">
+                    <input 
+                        type="text" 
+                        placeholder="Prénom" 
+                        value={guestForm.firstName}
+                        onChange={(e) => setGuestForm({...guestForm, firstName: e.target.value})}
+                        className="apple-input w-full py-3 text-lg text-white placeholder:text-white/20"
+                    />
+                </div>
+                <div className="group">
+                    <input 
+                        type="text" 
+                        placeholder="Nom" 
+                        value={guestForm.lastName}
+                        onChange={(e) => setGuestForm({...guestForm, lastName: e.target.value})}
+                        className="apple-input w-full py-3 text-lg text-white placeholder:text-white/20"
+                    />
+                </div>
+                <div className="group">
+                    <input 
+                        type="tel" 
+                        placeholder="Téléphone" 
+                        value={guestForm.phone}
+                        onChange={(e) => setGuestForm({...guestForm, phone: e.target.value})}
+                        className="apple-input w-full py-3 text-lg text-white placeholder:text-white/20"
+                    />
+                </div>
+
+                {/* Referral */}
+                <div className="pt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                        <Tag className="w-4 h-4 text-white/40" />
+                        <span className="text-xs text-white/40 font-medium uppercase tracking-wide">Code Parrain (Optionnel)</span>
+                    </div>
+                    <div className="relative">
+                        <input 
+                            type="text" 
+                            maxLength={4}
+                            placeholder="ex: LUC4"
+                            value={referralCode}
+                            onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                            className="w-full bg-[#1c1c1e] rounded-xl py-3 px-4 text-white text-center tracking-[0.2em] font-medium border border-white/10 focus:border-apple-blue outline-none transition-colors"
+                        />
+                        {referralCode.length === 4 && (
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                {isSelfReferral ? (
+                                    <span className="text-[10px] text-red-500 font-bold bg-red-500/10 px-2 py-1 rounded">Invalide</span>
+                                ) : (
+                                    <span className="text-[10px] text-green-500 font-bold bg-green-500/10 px-2 py-1 rounded">Valide</span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
           </div>
+        )}
 
-          {/* STEP 1: STYLE */}
-          {currentStep === 1 && (
-            <div className="animate-step">
-              <span className="step-label">01. Choix du Service</span>
-              <div className="flex flex-col gap-3">
-                {SERVICES_DATA.map((service) => (
-                    <div 
-                        key={service.id}
-                        className={`option-card ${selectedService?.id === service.id ? 'selected' : ''}`}
-                        onClick={() => setSelectedService(service)}
-                    >
-                        <div className="style-info">
-                            <h3>{service.name}</h3>
-                            <p>{service.note}</p>
-                        </div>
-                        <div className="price">{service.price}</div>
+        {/* STEP 4: SUCCESS */}
+        {currentStep === 4 && (
+          <div className="animate-enter text-center pt-8">
+            <div className="w-20 h-20 bg-[#1c1c1e] rounded-full flex items-center justify-center mx-auto mb-6 shadow-2xl relative">
+                {isFreeCut ? (
+                    <Star className="w-10 h-10 text-yellow-400 fill-yellow-400 animate-pulse" />
+                ) : (
+                    <Clock className="w-10 h-10 text-white/80" />
+                )}
+                <div className="absolute -bottom-2 -right-2 bg-green-500 rounded-full p-1.5 border-4 border-black">
+                    <CheckCircle className="w-4 h-4 text-black" />
+                </div>
+            </div>
+
+            <h2 className="text-3xl font-semibold text-white mb-2">{isFreeCut ? 'Gratuité Appliquée !' : 'Demande Envoyée'}</h2>
+            <p className="text-white/50 text-sm mb-8 leading-relaxed max-w-xs mx-auto">
+                Votre demande a bien été reçue. Vous recevrez une <strong className="text-white">confirmation SMS</strong> de Daryl très prochainement.
+            </p>
+
+            <div className="apple-card p-6 text-left mb-8 space-y-3">
+                <div className="flex justify-between items-center py-2 border-b border-white/5">
+                    <span className="text-white/40 text-sm">Service</span>
+                    <span className="text-white font-medium">{selectedService?.name}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-white/5">
+                    <span className="text-white/40 text-sm">Date</span>
+                    <span className="text-white font-medium">{getFormattedDate(currentSchedule.date).day} {getFormattedDate(currentSchedule.date).month} à {allSlots.find(s => s.id === selectedSlotId)?.time}</span>
+                </div>
+                {isFreeCut && (
+                    <div className="flex justify-between items-center py-2">
+                        <span className="text-yellow-400 text-sm font-bold">Total</span>
+                        <span className="text-yellow-400 font-bold">0 € (OFFERT)</span>
                     </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 2: TIME */}
-          {currentStep === 2 && (
-            <div className="animate-step">
-              <span className="step-label">02. Choix du Créneau</span>
-              
-              {/* Date Strip */}
-              <div className="date-strip">
-                {schedules.map((schedule, index) => {
-                    const d = getFormattedDate(schedule.date);
-                    const isSelected = selectedDateIndex === index;
-                    return (
-                        <div 
-                            key={schedule.date}
-                            className={`date-pill ${isSelected ? 'selected' : ''}`}
-                            onClick={() => {
-                                setSelectedDateIndex(index);
-                                setSelectedHour(null);
-                                setSelectedSlotId(null);
-                            }}
-                        >
-                            <span className="font-mono text-[0.6rem] uppercase">{d.month}</span>
-                            <span className="font-space text-lg font-bold">{d.day}</span>
-                        </div>
-                    );
-                })}
-              </div>
-
-              {/* TWO LEVEL TIME SELECTION */}
-              
-              {/* Level 1: HOURS */}
-              {!selectedHour && (
-                  <div className="animate-step mt-6">
-                      <p className="font-mono text-[10px] text-white/40 uppercase mb-4 tracking-widest text-center">Sélectionnez une heure</p>
-                      <div className="time-grid">
-                        {allSlots.length === 0 ? (
-                            <div className="col-span-3 text-center py-8 text-white/30 font-mono text-xs">Aucun créneau disponible</div>
-                        ) : (
-                            uniqueHours.map((hour) => {
-                                // Check if any slot in this hour is available
-                                const hasAvailability = allSlots.some(s => s.time.startsWith(hour) && s.isAvailable && !isSlotTaken(s.time));
-                                
-                                return (
-                                    <div 
-                                        key={hour}
-                                        className={`time-slot ${!hasAvailability ? 'disabled' : ''}`}
-                                        onClick={() => hasAvailability && setSelectedHour(hour)}
-                                    >
-                                        {hour}h
-                                    </div>
-                                );
-                            })
-                        )}
-                      </div>
-                  </div>
-              )}
-
-              {/* Level 2: MINUTES (Slots) */}
-              {selectedHour && (
-                  <div className="animate-step mt-6">
-                      <div className="flex justify-between items-center mb-4">
-                           <button 
-                             onClick={() => { setSelectedHour(null); setSelectedSlotId(null); }}
-                             className="text-xs text-white/60 hover:text-white flex items-center gap-1 font-mono uppercase"
-                           >
-                             <ChevronLeft className="w-3 h-3" /> Retour
-                           </button>
-                           <p className="font-mono text-[10px] text-white/40 uppercase tracking-widest">{selectedHour}h</p>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-3">
-                          {allSlots
-                            .filter(s => s.time.startsWith(selectedHour))
-                            .map((slot) => {
-                              const isTaken = !slot.isAvailable || isSlotTaken(slot.time);
-                              return (
-                                  <div 
-                                      key={slot.id}
-                                      className={`time-slot ${selectedSlotId === slot.id ? 'selected' : ''} ${isTaken ? 'disabled' : ''}`}
-                                      onClick={() => !isTaken && setSelectedSlotId(slot.id)}
-                                  >
-                                      {slot.time}
-                                  </div>
-                              );
-                          })}
-                      </div>
-                  </div>
-              )}
-
-            </div>
-          )}
-
-          {/* STEP 3: IDENTITY */}
-          {currentStep === 3 && (
-            <div className="animate-step">
-              <span className="step-label">03. Vos Coordonnées</span>
-              
-              <div className="input-group">
-                <input 
-                    type="text" 
-                    placeholder=" " 
-                    value={guestForm.firstName}
-                    onChange={(e) => setGuestForm({...guestForm, firstName: e.target.value})}
-                />
-                <label>Prénom</label>
-              </div>
-
-              <div className="input-group">
-                <input 
-                    type="text" 
-                    placeholder=" " 
-                    value={guestForm.lastName}
-                    onChange={(e) => setGuestForm({...guestForm, lastName: e.target.value})}
-                />
-                <label>Nom</label>
-              </div>
-
-              <div className="input-group">
-                <input 
-                    type="tel" 
-                    placeholder=" " 
-                    value={guestForm.phone}
-                    onChange={(e) => setGuestForm({...guestForm, phone: e.target.value})}
-                />
-                <label>Téléphone</label>
-              </div>
-
-              {/* REFERRAL CODE INPUT */}
-              <div className="input-group">
-                  <input 
-                    type="text" 
-                    placeholder=" "
-                    maxLength={4}
-                    value={referralCode}
-                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                    className="tracking-widest"
-                />
-                <label className="flex items-center gap-2">
-                    <Tag className="w-3 h-3" /> Code Parrain (Optionnel)
-                </label>
-                {referralCode.length > 0 && referralCode.length < 4 && (
-                    <span className="absolute right-0 top-4 text-[10px] text-red-500 font-mono">4 caractères requis</span>
                 )}
-                {referralCode.length === 4 && (
-                    <span className={`absolute right-0 top-4 text-[10px] font-mono ${isSelfReferral ? 'text-red-500' : 'text-green-500'}`}>
-                        {isSelfReferral ? 'Code personnel invalide' : 'Code valide'}
-                    </span>
-                )}
-              </div>
-
             </div>
-          )}
 
-          {/* STEP 4: SUCCESS */}
-          {currentStep === 4 && (
-            <div className="animate-step text-center py-6">
-              
-               {/* Pending Status Visual */}
-               <div className="w-16 h-16 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-orange-500/20 shadow-[0_0_20px_rgba(249,115,22,0.1)]">
-                   <Clock className="w-8 h-8 text-orange-500" />
-               </div>
-
-              <h2 className="text-[2rem] font-bold text-white mb-2 tracking-tighter uppercase italic leading-none">
-                {isFreeCut ? 'GRATUIT !' : 'DEMANDE ENVOYÉE'}
-              </h2>
-
-              {/* Explicit Confirmation Message */}
-              <div className="max-w-[90%] mx-auto mb-8 bg-[#111] border border-white/5 rounded-2xl p-4">
-                  <p className="text-white/80 text-sm leading-relaxed">
-                      Votre rendez-vous n'est <strong className="text-white">pas encore confirmé</strong>.
-                  </p>
-                  <div className="mt-3 flex items-start gap-3 text-left bg-black/50 p-3 rounded-lg border border-white/5">
-                      <MessageSquare className="w-5 h-5 text-apple-blue shrink-0 mt-0.5" />
-                      <p className="text-xs text-white/60">
-                          Vous recevrez un <span className="text-apple-blue font-bold">SMS de validation</span> de Daryl une fois le créneau accepté.
-                      </p>
-                  </div>
-              </div>
-              
-              <div className="bg-[#111] p-6 rounded-2xl border border-white/10 mb-8 mx-2 text-left">
-                  <div className="grid grid-cols-1 gap-2 font-mono text-sm">
-                      <div className="flex justify-between">
-                          <span className="text-white/40">Service</span>
-                          <span className="text-white font-bold">{selectedService?.name}</span>
-                      </div>
-                      <div className="flex justify-between">
-                          <span className="text-white/40">Date</span>
-                          <span className="text-white">{getFormattedDate(currentSchedule.date).day} {getFormattedDate(currentSchedule.date).month} @ {allSlots.find(s => s.id === selectedSlotId)?.time}</span>
-                      </div>
-                      <div className="flex justify-between">
-                          <span className="text-white/40">Client</span>
-                          <span className="text-white uppercase">{guestForm.firstName} {guestForm.lastName}</span>
-                      </div>
-                      {referralCode && (
-                          <div className="flex justify-between">
-                             <span className="text-white/40">Code Parrain</span>
-                             <span className="text-apple-blue">{referralCode}</span>
-                          </div>
-                      )}
-                      {isFreeCut && (
-                           <div className="flex justify-between mt-2 pt-2 border-t border-white/10">
-                             <span className="text-apple-blue font-bold">TOTAL</span>
-                             <span className="text-apple-blue font-bold">0 € (OFFERT)</span>
-                           </div>
-                      )}
-                  </div>
-              </div>
-
-              {/* Loyalty Card */}
-              <div className="loyalty-card">
-                  <div className="flex justify-between items-center mb-2">
-                      <span className="text-[10px] uppercase tracking-[2px] text-white/60">Fidélité</span>
-                      <span className="text-xs font-mono text-white">{visitsTowardGoal}/8</span>
-                  </div>
-                  <div className="loyalty-dots">
-                      {[1, 2, 3, 4, 5, 6, 7].map((num) => (
-                          <div 
-                            key={num} 
-                            className={`dot ${num <= visitsTowardGoal ? 'filled' : ''}`}
-                          />
-                      ))}
-                      <div className={`dot ${isFreeCut ? 'free-cut' : ''} border border-white/20 flex items-center justify-center`}>
-                          {isFreeCut && <Star className="w-2 h-2 text-white fill-white" />}
-                      </div>
-                  </div>
-                  <div className="mt-4 text-center">
-                    <span className="text-[9px] text-white/40 font-mono uppercase">
-                        {isFreeCut ? 'Félicitations ! Votre fidélité est récompensée.' : 'Encore quelques coupes avant la gratuité.'}
-                    </span>
-                  </div>
-              </div>
-
-              <button 
+            <button 
                 onClick={() => {
                     setCurrentStep(1);
                     setSelectedService(null);
@@ -715,38 +446,35 @@ export const Booking = () => {
                     setReferralCode('');
                     setGuestForm({ firstName: '', lastName: '', phone: '' });
                 }}
-                className="btn btn-secondary mt-8"
-              >
-                Réserver à nouveau
-              </button>
-            </div>
-          )}
+                className="apple-btn-secondary py-3 px-8 text-sm"
+            >
+                Nouvelle Réservation
+            </button>
+          </div>
+        )}
 
-          {/* Navigation Actions */}
-          {currentStep < 4 && (
-            <div className="flex gap-3 mt-10">
-                {/* Back Button Logic */}
+        {/* Navigation */}
+        {currentStep < 4 && (
+            <div className="mt-12 flex gap-3">
                 {(currentStep > 1 || (currentStep === 2 && selectedHour)) && (
-                    <button 
-                        className="btn btn-secondary" 
+                     <button 
                         onClick={handleBack}
+                        className="apple-btn-secondary flex-1 py-4 text-sm"
                     >
                         Retour
                     </button>
                 )}
                 
-                {/* Next Button Logic */}
                 <button 
-                    className="btn btn-primary" 
                     disabled={!isStepValid()}
                     onClick={handleNext}
+                    className="apple-btn flex-1 py-4 text-sm shadow-lg shadow-blue-900/20"
                 >
-                    {currentStep === 3 ? 'Confirmer' : 'Suivant'}
+                    {currentStep === 3 ? 'Confirmer la demande' : 'Continuer'}
                 </button>
             </div>
-          )}
-
-        </div>
+        )}
+        
       </div>
     </section>
   );

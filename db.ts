@@ -21,17 +21,23 @@ const getEnv = (key: string) => {
 };
 
 // Récupération de l'URL de la base de données
-// PRIORITÉ :
-// 1. Variable d'environnement (Production)
-// 2. LocalStorage (Configuration manuelle via AdminInterface pour démo/test)
 const getConnectionString = () => {
-    const envUrl = getEnv('NETLIFY_DATABASE_URL') || getEnv('DATABASE_URL') || getEnv('VITE_DATABASE_URL');
-    if (envUrl) return envUrl;
+    // URL par défaut fournie pour le projet Daryl Barber
+    let url = "postgresql://neondb_owner:npg_lu2eOvKXfM1y@ep-billowing-frog-ab0q17jx-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
 
-    if (typeof window !== 'undefined') {
-        return localStorage.getItem('daryl_db_url');
+    // 1. Env Vars (Prioritaire si défini en prod)
+    const envUrl = getEnv('NETLIFY_DATABASE_URL') || getEnv('DATABASE_URL') || getEnv('VITE_DATABASE_URL');
+    if (envUrl) {
+        url = envUrl;
+    } 
+    // 2. LocalStorage (Permet de surcharger via l'interface Admin si nécessaire)
+    else if (typeof window !== 'undefined') {
+        const localUrl = localStorage.getItem('daryl_db_url');
+        if (localUrl) url = localUrl;
     }
-    return undefined;
+
+    // Nettoyage des espaces blancs accidentels
+    return url ? url.trim() : "";
 };
 
 const connectionString = getConnectionString();
@@ -40,14 +46,14 @@ let sqlClient: any = null;
 
 if (connectionString) {
   try {
-    // Initialisation du client Neon en mode Serverless (compatible navigateur)
+    // Initialisation du client Neon en mode Serverless
     sqlClient = neon(connectionString);
     console.log("Database connection initialized.");
   } catch (err) {
     console.error("Failed to initialize database client:", err);
   }
 } else {
-  console.warn("No database connection string found. Running in LocalStorage (Offline) mode.");
+  console.warn("No database connection string found. App will start in Offline Mode.");
 }
 
 export const sql = sqlClient;
