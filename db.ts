@@ -22,42 +22,63 @@ const getEnv = (key: string) => {
 
 // Récupération de l'URL de la base de données
 const getConnectionString = () => {
-    // URL par défaut nettoyée pour compatibilité navigateur (suppression des params query potentiellement bloquants)
+    // URL par défaut - Hardcodée proprement
     const defaultUrl = "postgresql://neondb_owner:npg_lu2eOvKXfM1y@ep-billowing-frog-ab0q17jx-pooler.eu-west-2.aws.neon.tech/neondb";
 
-    // 1. Env Vars (Prioritaire si défini en prod via Vercel/Netlify)
+    let url = defaultUrl;
+
+    // 1. Env Vars
     const envUrl = getEnv('NETLIFY_DATABASE_URL') || getEnv('DATABASE_URL') || getEnv('VITE_DATABASE_URL');
     if (envUrl) {
-        return envUrl;
+        url = envUrl;
     } 
     
-    // 2. LocalStorage (Permet de surcharger UNIQUEMENT si une URL valide est fournie)
+    // 2. LocalStorage (Avec nettoyage agressif)
     if (typeof window !== 'undefined') {
-        const localUrl = localStorage.getItem('daryl_db_url');
-        // On n'utilise l'override local que s'il semble valide (commence par postgres)
-        if (localUrl && localUrl.trim().startsWith('postgres')) {
-            return localUrl.trim();
+        try {
+            const localUrl = localStorage.getItem('daryl_db_url');
+            if (localUrl && localUrl.trim().length > 10) {
+                // On vérifie que ça ressemble vaguement à une URL postgres
+                if (localUrl.includes('postgres')) {
+                    url = localUrl;
+                }
+            }
+        } catch (e) {
+            console.warn("Erreur lecture LocalStorage", e);
         }
     }
-
-    // 3. Fallback : Utiliser l'URL par défaut hardcodée
-    return defaultUrl;
+    
+    // Nettoyage final agressif pour éviter l'erreur "Invalid Name" dans les headers Fetch
+    try {
+        // Supprime les paramètres de requête comme ?sslmode=...
+        if (url.includes('?')) {
+            url = url.split('?')[0];
+        }
+        
+        // Supprime tout espace invisible, saut de ligne, etc.
+        url = url.trim().replace(/\s/g, '');
+        
+        return url;
+    } catch (e) {
+        return defaultUrl;
+    }
 };
 
 const connectionString = getConnectionString();
 
-let sqlClient: any = null;
+let sqlClient: any = undefined;
 
 if (connectionString) {
   try {
-    // Initialisation du client Neon en mode Serverless (HTTP)
+    // Initialisation du client Neon (HTTP mode)
+    // Note: neon() ne lance pas de connexion immédiatement, c'est au premier appel de query.
     sqlClient = neon(connectionString);
-    console.log("Database connection initialized");
+    console.log("Neon Client Initialized with URL ending in ...", connectionString.slice(-10));
   } catch (err) {
-    console.error("Failed to initialize database client:", err);
+    console.error("Failed to initialize database client constructor:", err);
   }
 } else {
-  console.warn("No database connection string found. App will start in Offline Mode.");
+  console.warn("No database connection string found.");
 }
 
 export const sql = sqlClient;
