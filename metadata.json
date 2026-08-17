@@ -1,5 +1,6 @@
 {
   "name": "Daryl Barber - MAIN",
   "description": "Expérience de coiffure premium inspirée par l'esthétique Apple avec des éléments 3D interactifs.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }
